@@ -615,6 +615,361 @@ restart_service() {
     start_service
 }
 
+# 交互式配置生成
+generate_config() {
+    local config_file="${1:-config.json}"
+    
+    echo ""
+    echo "========================================="
+    echo "  PVE Traffic Monitor - 配置生成向导"
+    echo "========================================="
+    echo ""
+    
+    # 检查是否已存在配置文件
+    if [ -f "$config_file" ]; then
+        print_warning "配置文件已存在: $config_file"
+        read -p "是否覆盖？(y/n): " -n 1 -r
+        echo
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            print_info "已取消"
+            return 0
+        fi
+    fi
+    
+    echo "请按提示输入配置信息（直接回车使用默认值）"
+    echo ""
+    
+    # ========== PVE 配置 ==========
+    print_info "=== PVE 连接配置 ==="
+    echo ""
+    
+    read -p "PVE 主机地址 [localhost]: " pve_host
+    pve_host=${pve_host:-localhost}
+    
+    read -p "PVE API 端口 [8006]: " pve_port
+    pve_port=${pve_port:-8006}
+    
+    read -p "PVE 节点名称 [pve]: " pve_node
+    pve_node=${pve_node:-pve}
+    
+    echo ""
+    print_info "API Token 配置（在 PVE Web 界面 -> 数据中心 -> 权限 -> API Tokens 创建）"
+    read -p "API Token ID (格式: user@realm!tokenid): " api_token_id
+    if [ -z "$api_token_id" ]; then
+        api_token_id="monitor@pve!traffic-monitor"
+        print_warning "使用默认值: $api_token_id"
+    fi
+    
+    read -p "API Token Secret (UUID格式): " api_token_secret
+    if [ -z "$api_token_secret" ]; then
+        api_token_secret="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+        print_warning "使用占位符，请稍后手动修改"
+    fi
+    
+    # ========== 监控配置 ==========
+    echo ""
+    print_info "=== 监控配置 ==="
+    echo ""
+    
+    read -p "监控间隔（秒）[60]: " interval_seconds
+    interval_seconds=${interval_seconds:-60}
+    
+    read -p "图表导出路径 [./exports]: " export_path
+    export_path=${export_path:-./exports}
+    
+    read -p "是否包含模板虚拟机 (y/n) [n]: " -n 1 -r include_templates
+    echo
+    if [[ $include_templates =~ ^[Yy]$ ]]; then
+        include_templates="true"
+    else
+        include_templates="false"
+    fi
+    
+    read -p "数据保留天数（0=永久）[90]: " data_retention_days
+    data_retention_days=${data_retention_days:-90}
+    
+    # ========== 存储配置 ==========
+    echo ""
+    print_info "=== 存储配置 ==="
+    echo ""
+    echo "存储类型选项："
+    echo "  1) file       - 文件存储（JSON格式）"
+    echo "  2) sqlite     - SQLite 数据库（推荐）"
+    echo "  3) mysql      - MySQL/MariaDB 数据库"
+    echo "  4) postgresql - PostgreSQL 数据库"
+    echo ""
+    read -p "选择存储类型 [2]: " storage_choice
+    storage_choice=${storage_choice:-2}
+    
+    case $storage_choice in
+        1)
+            storage_type="file"
+            read -p "文件存储路径 [./data]: " storage_path
+            storage_path=${storage_path:-./data}
+            storage_dsn=""
+            ;;
+        2)
+            storage_type="sqlite"
+            read -p "SQLite 数据库路径 [./data/pve_traffic.db]: " storage_dsn
+            storage_dsn=${storage_dsn:-./data/pve_traffic.db}
+            storage_path=""
+            ;;
+        3)
+            storage_type="mysql"
+            echo "MySQL DSN 格式: user:password@tcp(host:port)/database"
+            read -p "MySQL DSN: " storage_dsn
+            if [ -z "$storage_dsn" ]; then
+                storage_dsn="root:password@tcp(127.0.0.1:3306)/pve_traffic"
+                print_warning "使用示例值，请稍后修改"
+            fi
+            storage_path=""
+            ;;
+        4)
+            storage_type="postgresql"
+            echo "PostgreSQL DSN 格式: host=localhost port=5432 user=xxx password=xxx dbname=xxx sslmode=disable"
+            read -p "PostgreSQL DSN: " storage_dsn
+            if [ -z "$storage_dsn" ]; then
+                storage_dsn="host=localhost port=5432 user=postgres password=password dbname=pve_traffic sslmode=disable"
+                print_warning "使用示例值，请稍后修改"
+            fi
+            storage_path=""
+            ;;
+        *)
+            storage_type="sqlite"
+            storage_dsn="./data/pve_traffic.db"
+            storage_path=""
+            print_warning "无效选择，使用默认 SQLite"
+            ;;
+    esac
+    
+    # ========== Web API 配置 ==========
+    echo ""
+    print_info "=== Web API 配置（可选）==="
+    echo ""
+    
+    read -p "是否启用 Web API (y/n) [y]: " -n 1 -r api_enabled
+    echo
+    if [[ $api_enabled =~ ^[Nn]$ ]]; then
+        api_enabled="false"
+        api_host="0.0.0.0"
+        api_port="8080"
+    else
+        api_enabled="true"
+        read -p "API 监听地址 [0.0.0.0]: " api_host
+        api_host=${api_host:-0.0.0.0}
+        read -p "API 监听端口 [8080]: " api_port
+        api_port=${api_port:-8080}
+    fi
+    
+    # ========== 流量规则配置 ==========
+    echo ""
+    print_info "=== 流量规则配置 ==="
+    echo ""
+
+    read -p "是否创建流量规则 (y/n) [y]: " -n 1 -r create_rule
+    echo
+
+    rules_json=""
+    rule_count=0
+
+    if [[ ! $create_rule =~ ^[Nn]$ ]]; then
+        while true; do
+            rule_count=$((rule_count + 1))
+            echo ""
+            print_info "--- 配置第 $rule_count 条规则 ---"
+            echo ""
+
+            read -p "规则名称 [rule_$rule_count]: " rule_name
+            rule_name=${rule_name:-rule_$rule_count}
+
+            echo "规则周期选项: hour(小时), day(天), month(月)"
+            read -p "规则周期 [month]: " rule_period
+            rule_period=${rule_period:-month}
+
+            echo "流量方向选项: both(双向), upload(上传), download(下载)"
+            read -p "流量方向 [both]: " rule_direction
+            rule_direction=${rule_direction:-both}
+
+            read -p "流量限制（GB）[1000]: " rule_limit_gb
+            rule_limit_gb=${rule_limit_gb:-1000}
+
+            echo "超限操作选项: shutdown(关机), stop(强制停止), disconnect(断网), rate_limit(限速)"
+            read -p "超限操作 [disconnect]: " rule_action
+            rule_action=${rule_action:-disconnect}
+
+            rule_rate_limit=""
+            if [ "$rule_action" = "rate_limit" ]; then
+                read -p "限速值（MB/s）[1]: " rule_rate_limit_mb
+                rule_rate_limit_mb=${rule_rate_limit_mb:-1}
+                rule_rate_limit="\"rate_limit_mb\": $rule_rate_limit_mb,"
+            fi
+
+            read -p "匹配的虚拟机标签（多个用逗号分隔）[vps]: " rule_tags
+            rule_tags=${rule_tags:-vps}
+
+            # 格式化标签为JSON数组
+            rule_tags_json=$(echo "$rule_tags" | sed 's/,/","/g' | sed 's/^/["/' | sed 's/$/"]/')
+
+            read -p "是否启用规则 (y/n) [n]: " -n 1 -r rule_enabled
+            echo
+            if [[ $rule_enabled =~ ^[Yy]$ ]]; then
+                rule_enabled="true"
+            else
+                rule_enabled="false"
+            fi
+
+            # 构建当前规则的JSON
+            current_rule=$(cat << RULE_EOF
+        {
+            "name": "$rule_name",
+            "enabled": $rule_enabled,
+            "period": "$rule_period",
+            "use_creation_time": true,
+            "traffic_direction": "$rule_direction",
+            "limit_gb": $rule_limit_gb,
+            "action": "$rule_action",
+            $rule_rate_limit
+            "vm_ids": [],
+            "vm_tags": $rule_tags_json,
+            "exclude_vm_ids": []
+        }
+RULE_EOF
+)
+
+            # 将规则添加到规则列表
+            if [ -z "$rules_json" ]; then
+                rules_json="$current_rule"
+            else
+                rules_json="$rules_json,
+$current_rule"
+            fi
+
+            echo ""
+            print_success "规则 '$rule_name' 已添加（共 $rule_count 条）"
+
+            # 询问是否继续添加
+            read -p "是否继续添加规则 (y/n) [n]: " -n 1 -r add_more
+            echo
+            if [[ ! $add_more =~ ^[Yy]$ ]]; then
+                break
+            fi
+        done
+
+        print_info "共配置了 $rule_count 条规则"
+    fi
+    
+    # ========== 生成配置文件 ==========
+    echo ""
+    print_info "正在生成配置文件..."
+    
+    # 构建存储配置JSON
+    if [ "$storage_type" = "file" ]; then
+        storage_json=$(cat << STORAGE_EOF
+    "storage": {
+        "type": "file",
+        "file_path": "$storage_path"
+    }
+STORAGE_EOF
+)
+    else
+        storage_json=$(cat << STORAGE_EOF
+    "storage": {
+        "type": "$storage_type",
+        "dsn": "$storage_dsn",
+        "max_open_conns": 10,
+        "max_idle_conns": 5,
+        "conn_max_lifetime": 3600
+    }
+STORAGE_EOF
+)
+    fi
+    
+    # 构建完整配置
+    cat > "$config_file" << CONFIG_EOF
+{
+    "pve": {
+        "host": "$pve_host",
+        "port": $pve_port,
+        "node": "$pve_node",
+        "api_token_id": "$api_token_id",
+        "api_token_secret": "$api_token_secret"
+    },
+    "monitor": {
+        "interval_seconds": $interval_seconds,
+        "export_path": "$export_path",
+        "include_templates": $include_templates,
+        "data_retention_days": $data_retention_days
+    },
+$storage_json,
+    "api": {
+        "enabled": $api_enabled,
+        "host": "$api_host",
+        "port": $api_port
+    },
+    "rules": [
+        $rules_json
+    ]
+}
+CONFIG_EOF
+    
+    # 验证JSON格式
+    if command -v python3 &> /dev/null; then
+        if python3 -c "import json; json.load(open('$config_file'))" 2>/dev/null; then
+            print_success "配置文件已生成: $config_file"
+        else
+            print_warning "配置文件已生成，但JSON格式可能有问题，请检查"
+        fi
+    elif command -v python &> /dev/null; then
+        if python -c "import json; json.load(open('$config_file'))" 2>/dev/null; then
+            print_success "配置文件已生成: $config_file"
+        else
+            print_warning "配置文件已生成，但JSON格式可能有问题，请检查"
+        fi
+    else
+        print_success "配置文件已生成: $config_file"
+    fi
+    
+    echo ""
+    echo "========================================="
+    echo "  配置摘要"
+    echo "========================================="
+    echo ""
+    echo "PVE 连接:"
+    echo "  主机: $pve_host:$pve_port"
+    echo "  节点: $pve_node"
+    echo "  Token ID: $api_token_id"
+    echo ""
+    echo "监控:"
+    echo "  间隔: ${interval_seconds}秒"
+    echo "  数据保留: ${data_retention_days}天"
+    echo ""
+    echo "存储:"
+    echo "  类型: $storage_type"
+    if [ "$storage_type" = "file" ]; then
+        echo "  路径: $storage_path"
+    else
+        echo "  DSN: $storage_dsn"
+    fi
+    echo ""
+    echo "Web API:"
+    echo "  启用: $api_enabled"
+    if [ "$api_enabled" = "true" ]; then
+        echo "  地址: http://$api_host:$api_port"
+    fi
+    echo ""
+    
+    if [ "$api_token_secret" = "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx" ]; then
+        print_warning "请记得修改 API Token Secret！"
+        echo "编辑配置文件: nano $config_file"
+    fi
+    
+    echo ""
+    print_info "下一步："
+    echo "  1. 检查并修改配置文件: nano $config_file"
+    echo "  2. 编译程序: $0 build"
+    echo "  3. 启动服务: $0 nohup 或 sudo $0 install && sudo $0 start"
+}
+
 # 显示帮助
 show_help() {
     cat << EOF
@@ -639,11 +994,14 @@ PVE Traffic Monitor - 自动管理脚本
   enable        启用开机自启（需要已安装服务）
   disable       禁用开机自启
   
+  config        交互式配置生成向导
   build         编译前后端（同 make build-all）
   help          显示此帮助信息
 
 示例:
-  # 首次使用 - 安装并启动
+  # 首次使用 - 生成配置、安装并启动
+  $0 config     # 交互式生成配置
+  $0 build      # 完整构建（前后端）
   sudo $0 install
   sudo $0 start
   sudo $0 enable
@@ -706,6 +1064,9 @@ main() {
             ;;
         build)
             build
+            ;;
+        config)
+            generate_config "${2:-config.json}"
             ;;
         help|--help|-h)
             show_help
