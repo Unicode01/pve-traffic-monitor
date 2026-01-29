@@ -1,0 +1,43 @@
+{
+    "pve": {
+        "host": "localhost",
+        "port": 8006,
+        "node": "pve",
+        "api_token_id": "monitor@pve!traffic-monitor",
+        "api_token_secret": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    },
+    "monitor": {
+        "interval_seconds": 60,
+        "export_path": "./exports",
+        "include_templates": false,
+        "data_retention_days": 90
+    },
+    "storage": {
+        "type": "sqlite",
+        "dsn": "./data/pve_traffic.db",
+        "max_open_conns": 1,
+        "max_idle_conns": 1,
+        "conn_max_lifetime": 3600
+    },
+    "api": {
+        "enabled": true,
+        "host": "0.0.0.0",
+        "port": 8080
+    },
+    "rules": [
+        {
+            "name": "monthly_both_traffic",
+            "enabled": false,
+            "period": "month",
+            "use_creation_time": true,
+            "traffic_direction": "both",
+            "limit_gb": 1000,
+            "action": "disconnect",
+            "vm_ids": [],
+            "vm_tags": [
+                "vps"
+            ],
+            "exclude_vm_ids": []
+        }
+    ]
+}
