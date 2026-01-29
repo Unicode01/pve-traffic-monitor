@@ -1,0 +1,70 @@
+{
+  "app": {
+    "title": "PVE 流量监控"
+  },
+  "nav": {
+    "dashboard": "概览",
+    "charts": "图表",
+    "refresh": "刷新",
+    "language": "语言",
+    "theme": "主题",
+    "light": "亮色",
+    "dark": "暗色"
+  },
+  "dashboard": {
+    "title": "虚拟机列表",
+    "totalVMs": "虚拟机总数",
+    "runningVMs": "运行中",
+    "todayTraffic": "今日流量",
+    "totalSamples": "采样总数",
+    "apiAvgTime": "API 响应时间",
+    "vmId": "ID",
+    "name": "名称",
+    "status": "状态",
+    "matchedRules": "匹配规则",
+    "download": "下载",
+    "upload": "上传",
+    "total": "总计",
+    "action": "操作",
+    "details": "详情",
+    "running": "运行中",
+    "stopped": "已停止"
+  },
+  "charts": {
+    "title": "流量图表",
+    "period": "周期",
+    "direction": "方向",
+    "update": "更新图表",
+    "currentMinute": "当前分钟",
+    "currentHour": "当前小时",
+    "today": "今天",
+    "currentMonth": "当前月",
+    "both": "双向",
+    "download": "下载",
+    "upload": "上传",
+    "trafficOverview": "流量概览",
+    "topVMs": "Top 10 流量虚拟机"
+  },
+  "vmDetail": {
+    "title": "虚拟机详情",
+    "close": "关闭",
+    "period": "周期",
+    "update": "更新",
+    "minute": "分钟（最近1小时）",
+    "hour": "小时",
+    "day": "天",
+    "month": "月",
+    "trafficPattern": "流量使用模式",
+    "stats": "统计信息"
+  },
+  "common": {
+    "loading": "加载中...",
+    "noData": "暂无数据",
+    "error": "加载失败",
+    "bytes": "字节",
+    "kb": "KB",
+    "mb": "MB",
+    "gb": "GB",
+    "tb": "TB"
+  }
+}

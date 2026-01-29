@@ -1,0 +1,83 @@
+{
+    "pve": {
+        "host": "localhost",
+        "port": 8006,
+        "node": "pve",
+        "api_token_id": "monitor@pve!traffic-monitor",
+        "api_token_secret": "xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"
+    },
+    "monitor": {
+        "interval_seconds": 60,
+        "export_path": "./exports",
+        "include_templates": false,
+        "data_retention_days": 90
+    },
+    "storage": {
+        "type": "file",
+        "file_path": "./data"
+    },
+    "api": {
+        "enabled": true,
+        "host": "0.0.0.0",
+        "port": 8080
+    },
+    "rules": [
+        {
+            "name": "monthly_both_traffic",
+            "enabled": false,
+            "period": "month",
+            "use_creation_time": true,
+            "traffic_direction": "both",
+            "limit_gb": 1000,
+            "action": "disconnect",
+            "vm_ids": [],
+            "vm_tags": [
+                "vps"
+            ],
+            "exclude_vm_ids": []
+        },
+        {
+            "name": "monthly_upload_only",
+            "enabled": false,
+            "period": "month",
+            "use_creation_time": true,
+            "traffic_direction": "upload",
+            "limit_gb": 500,
+            "action": "rate_limit",
+            "rate_limit_mb": 0.5,
+            "vm_ids": [],
+            "vm_tags": [
+                "upload-limited"
+            ],
+            "exclude_vm_ids": []
+        },
+        {
+            "name": "monthly_download_only",
+            "enabled": false,
+            "period": "month",
+            "use_creation_time": true,
+            "traffic_direction": "download",
+            "limit_gb": 2000,
+            "action": "disconnect",
+            "vm_ids": [],
+            "vm_tags": [
+                "download-heavy"
+            ],
+            "exclude_vm_ids": []
+        },
+        {
+            "name": "daily_limit",
+            "enabled": false,
+            "period": "day",
+            "use_creation_time": false,
+            "limit_gb": 50,
+            "action": "rate_limit",
+            "rate_limit_mb": 10,
+            "vm_ids": [],
+            "vm_tags": [
+                "limited"
+            ],
+            "exclude_vm_ids": []
+        }
+    ]
+}

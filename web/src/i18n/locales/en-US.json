@@ -1,0 +1,70 @@
+{
+  "app": {
+    "title": "PVE Traffic Monitor"
+  },
+  "nav": {
+    "dashboard": "Dashboard",
+    "charts": "Charts",
+    "refresh": "Refresh",
+    "language": "Language",
+    "theme": "Theme",
+    "light": "Light",
+    "dark": "Dark"
+  },
+  "dashboard": {
+    "title": "Virtual Machines",
+    "totalVMs": "Total VMs",
+    "runningVMs": "Running",
+    "todayTraffic": "Today's Traffic",
+    "totalSamples": "Total Samples",
+    "apiAvgTime": "API Avg Response",
+    "vmId": "ID",
+    "name": "Name",
+    "status": "Status",
+    "matchedRules": "Matched Rules",
+    "download": "Download",
+    "upload": "Upload",
+    "total": "Total",
+    "action": "Action",
+    "details": "Details",
+    "running": "Running",
+    "stopped": "Stopped"
+  },
+  "charts": {
+    "title": "Traffic Charts",
+    "period": "Period",
+    "direction": "Direction",
+    "update": "Update Chart",
+    "currentMinute": "Current Minute",
+    "currentHour": "Current Hour",
+    "today": "Today",
+    "currentMonth": "Current Month",
+    "both": "Both",
+    "download": "Download",
+    "upload": "Upload",
+    "trafficOverview": "Traffic Overview",
+    "topVMs": "Top 10 VMs by Traffic"
+  },
+  "vmDetail": {
+    "title": "VM Details",
+    "close": "Close",
+    "period": "Period",
+    "update": "Update",
+    "minute": "Minute (Last Hour)",
+    "hour": "Hour",
+    "day": "Day",
+    "month": "Month",
+    "trafficPattern": "Traffic Usage Pattern",
+    "stats": "Statistics"
+  },
+  "common": {
+    "loading": "Loading...",
+    "noData": "No data available",
+    "error": "Failed to load",
+    "bytes": "Bytes",
+    "kb": "KB",
+    "mb": "MB",
+    "gb": "GB",
+    "tb": "TB"
+  }
+}
