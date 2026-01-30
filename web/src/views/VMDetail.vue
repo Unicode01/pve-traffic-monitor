@@ -8,15 +8,49 @@
 
     <el-card shadow="hover" class="controls-card">
       <el-form :inline="true" class="controls-form">
-        <el-form-item :label="t('vmDetail.period')">
-          <el-select v-model="period" @change="loadData" style="width: 180px;">
-            <el-option :label="t('vmDetail.minute')" value="minute" />
-            <el-option :label="t('vmDetail.hour')" value="hour" />
-            <el-option :label="t('vmDetail.day')" value="day" />
-            <el-option :label="t('vmDetail.month')" value="month" />
-          </el-select>
+        <el-form-item :label="t('charts.timeMode')">
+          <el-radio-group v-model="timeMode" @change="handleTimeModeChange">
+            <el-radio-button value="preset">{{ t('charts.presetMode') }}</el-radio-button>
+            <el-radio-button value="custom">{{ t('charts.customMode') }}</el-radio-button>
+          </el-radio-group>
         </el-form-item>
-        
+
+        <template v-if="timeMode === 'preset'">
+          <el-form-item :label="t('vmDetail.period')">
+            <el-select v-model="period" @change="loadData" style="width: 180px;">
+              <el-option :label="t('vmDetail.minute')" value="minute" />
+              <el-option :label="t('vmDetail.hour')" value="hour" />
+              <el-option :label="t('vmDetail.day')" value="day" />
+              <el-option :label="t('vmDetail.month')" value="month" />
+            </el-select>
+          </el-form-item>
+        </template>
+
+        <template v-else>
+          <el-form-item :label="t('charts.granularity')">
+            <el-select v-model="granularity" style="width: 120px;">
+              <el-option :label="t('charts.byMinute')" value="minute" />
+              <el-option :label="t('charts.byHour')" value="hour" />
+              <el-option :label="t('charts.byDay')" value="day" />
+              <el-option :label="t('charts.byMonth')" value="month" />
+            </el-select>
+          </el-form-item>
+
+          <el-form-item :label="t('charts.timeRange')">
+            <el-date-picker
+              v-model="dateTimeRange"
+              :type="datePickerType"
+              :format="datePickerFormat"
+              :value-format="datePickerValueFormat"
+              range-separator="-"
+              :start-placeholder="t('charts.startTime')"
+              :end-placeholder="t('charts.endTime')"
+              :shortcuts="dateShortcuts"
+              style="width: 380px;"
+            />
+          </el-form-item>
+        </template>
+
         <el-form-item>
           <el-button type="primary" @click="loadData" :icon="Refresh">
             {{ t('vmDetail.update') }}
@@ -68,7 +102,7 @@
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, watch } from 'vue'
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
@@ -85,11 +119,119 @@ const themeStore = useThemeStore()
 
 const vmid = ref(route.params.id)
 const vmName = ref('')
+const timeMode = ref('preset')
 const period = ref('day')
+const granularity = ref('hour')
+const dateTimeRange = ref(null)
 const statsData = ref([])
 
 const chartContainer = ref(null)
 let chartInstance = null
+
+// 根据粒度计算日期选择器类型
+const datePickerType = computed(() => {
+  switch (granularity.value) {
+    case 'minute':
+    case 'hour':
+      return 'datetimerange'
+    case 'day':
+      return 'daterange'
+    case 'month':
+      return 'monthrange'
+    default:
+      return 'datetimerange'
+  }
+})
+
+// 日期选择器显示格式
+const datePickerFormat = computed(() => {
+  switch (granularity.value) {
+    case 'minute':
+    case 'hour':
+      return 'YYYY-MM-DD HH:mm'
+    case 'day':
+      return 'YYYY-MM-DD'
+    case 'month':
+      return 'YYYY-MM'
+    default:
+      return 'YYYY-MM-DD HH:mm'
+  }
+})
+
+// 日期选择器值格式
+const datePickerValueFormat = computed(() => {
+  return 'YYYY-MM-DD HH:mm:ss'
+})
+
+// 快捷选项
+const dateShortcuts = computed(() => {
+  const now = new Date()
+  return [
+    {
+      text: t('charts.lastHour'),
+      value: () => {
+        const end = new Date()
+        const start = new Date()
+        start.setTime(start.getTime() - 3600 * 1000)
+        return [start, end]
+      }
+    },
+    {
+      text: t('charts.last24Hours'),
+      value: () => {
+        const end = new Date()
+        const start = new Date()
+        start.setTime(start.getTime() - 3600 * 1000 * 24)
+        return [start, end]
+      }
+    },
+    {
+      text: t('charts.last7Days'),
+      value: () => {
+        const end = new Date()
+        const start = new Date()
+        start.setTime(start.getTime() - 3600 * 1000 * 24 * 7)
+        return [start, end]
+      }
+    },
+    {
+      text: t('charts.last30Days'),
+      value: () => {
+        const end = new Date()
+        const start = new Date()
+        start.setTime(start.getTime() - 3600 * 1000 * 24 * 30)
+        return [start, end]
+      }
+    },
+    {
+      text: t('charts.thisMonth'),
+      value: () => {
+        const end = new Date()
+        const start = new Date(now.getFullYear(), now.getMonth(), 1)
+        return [start, end]
+      }
+    },
+    {
+      text: t('charts.lastMonth'),
+      value: () => {
+        const start = new Date(now.getFullYear(), now.getMonth() - 1, 1)
+        const end = new Date(now.getFullYear(), now.getMonth(), 0, 23, 59, 59)
+        return [start, end]
+      }
+    }
+  ]
+})
+
+const handleTimeModeChange = () => {
+  if (timeMode.value === 'custom' && !dateTimeRange.value) {
+    // 默认设置为最近24小时
+    const end = new Date()
+    const start = new Date()
+    start.setTime(start.getTime() - 3600 * 1000 * 24)
+    dateTimeRange.value = [start, end]
+  }
+  loadData()
+}
 
 const loadData = async () => {
   try {
@@ -97,7 +239,7 @@ const loadData = async () => {
     const vmRes = await api.getVM(vmid.value)
     if (vmRes.success && vmRes.data) {
       vmName.value = vmRes.data.vm.name
-      
+
       // 转换统计数据为表格格式
       if (vmRes.data.stats) {
         statsData.value = Object.keys(vmRes.data.stats).map(key => ({
@@ -106,9 +248,21 @@ const loadData = async () => {
         }))
       }
     }
-    
+
+    // 构建历史数据请求参数
+    let params = {}
+    if (timeMode.value === 'preset') {
+      params.period = period.value
+    } else if (dateTimeRange.value && dateTimeRange.value.length === 2) {
+      params.granularity = granularity.value
+      params.start = new Date(dateTimeRange.value[0]).toISOString()
+      params.end = new Date(dateTimeRange.value[1]).toISOString()
+    } else {
+      params.period = 'day'
+    }
+
     // 加载历史数据
-    const historyRes = await api.getHistory(vmid.value, { period: period.value })
+    const historyRes = await api.getHistory(vmid.value, params)
     if (historyRes.success && historyRes.data) {
       renderChart(historyRes.data)
     }
@@ -192,10 +346,24 @@ onUnmounted(() => {
 
 .controls-form {
   margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
 }
 
 .controls-form :deep(.el-form-item) {
   margin-bottom: 0;
+  margin-right: 0;
+}
+
+.controls-form :deep(.el-radio-group) {
+  display: flex;
+}
+
+@media (max-width: 768px) {
+  .controls-form :deep(.el-date-editor) {
+    width: 100% !important;
+  }
 }
 
 :deep(.el-page-header) {

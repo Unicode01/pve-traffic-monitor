@@ -11,6 +11,7 @@ import (
 	"pve-traffic-monitor/pkg/pve"
 	"pve-traffic-monitor/pkg/storage"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 )
@@ -209,6 +210,14 @@ func (s *Server) setupRoutes() {
 	// 优先使用构建后的web/dist目录，如果不存在则使用内嵌的简化版本
 	webDir := "./web/dist"
 	if _, err := os.Stat(webDir); err == nil {
+		// 获取 webDir 的绝对路径用于安全检查
+		absWebDir, err := filepath.Abs(webDir)
+		if err != nil {
+			log.Printf("警告: 无法获取 webDir 绝对路径: %v，使用内嵌版本", err)
+			s.mux.HandleFunc("/", s.handleIndex)
+			return
+		}
+
 		// 存在构建后的前端文件，支持 SPA 路由
 		s.mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 			// 如果是 API 路径，返回 404
@@ -217,18 +226,45 @@ func (s *Server) setupRoutes() {
 				return
 			}
 
-			// 尝试读取文件
-			filePath := filepath.Join(webDir, r.URL.Path)
-			info, err := os.Stat(filePath)
+			// 安全路径处理：防止路径遍历攻击
+			// 1. 清理请求路径，移除 .. 和多余的分隔符
+			cleanPath := filepath.Clean(r.URL.Path)
 
-			// 如果文件不存在或是目录，返回 index.html（SPA 路由）
-			if err != nil || info.IsDir() {
-				http.ServeFile(w, r, filepath.Join(webDir, "index.html"))
+			// 2. 确保路径不以 .. 开头（防止逃逸）
+			if strings.HasPrefix(cleanPath, "..") {
+				http.NotFound(w, r)
 				return
 			}
 
-			// 文件存在，直接返回
-			http.ServeFile(w, r, filePath)
+			// 3. 构建完整文件路径
+			filePath := filepath.Join(absWebDir, cleanPath)
+
+			// 4. 获取绝对路径并验证是否在 webDir 内
+			absFilePath, err := filepath.Abs(filePath)
+			if err != nil {
+				http.NotFound(w, r)
+				return
+			}
+
+			// 5. 关键安全检查：确保最终路径仍在 webDir 目录内
+			// 使用 filepath.Separator 确保跨平台兼容
+			if !strings.HasPrefix(absFilePath, absWebDir+string(filepath.Separator)) && absFilePath != absWebDir {
+				log.Printf("安全警告: 检测到路径遍历尝试: %s -> %s", r.URL.Path, absFilePath)
+				http.NotFound(w, r)
+				return
+			}
+
+			// 检查文件状态
+			info, err := os.Stat(absFilePath)
+
+			// 如果文件不存在或是目录，返回 index.html（SPA 路由）
+			if err != nil || info.IsDir() {
+				http.ServeFile(w, r, filepath.Join(absWebDir, "index.html"))
+				return
+			}
+
+			// 文件存在且在安全目录内，直接返回
+			http.ServeFile(w, r, absFilePath)
 		})
 	} else {
 		// 使用内嵌的简化版本
@@ -978,14 +1014,48 @@ func (s *Server) handleVM(w http.ResponseWriter, r *http.Request) {
 
 // handleStats 获取统计信息
 func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
-	period := r.URL.Query().Get("period")
-	if period == "" {
-		period = "day"
-	}
-
+	// 获取基本参数
 	direction := r.URL.Query().Get("direction")
 	if direction == "" {
 		direction = "both"
+	}
+
+	// 检查是否使用自定义时间范围
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+	granularity := r.URL.Query().Get("granularity")
+
+	// 解析时间范围
+	var startTime, endTime time.Time
+	var useCustomRange bool
+	var period string
+
+	if startStr != "" && endStr != "" {
+		// 自定义时间范围模式
+		var err error
+		startTime, err = time.Parse(time.RFC3339, startStr)
+		if err != nil {
+			s.sendError(w, "Invalid start time format, use RFC3339", http.StatusBadRequest)
+			return
+		}
+		endTime, err = time.Parse(time.RFC3339, endStr)
+		if err != nil {
+			s.sendError(w, "Invalid end time format, use RFC3339", http.StatusBadRequest)
+			return
+		}
+		useCustomRange = true
+
+		// 设置粒度（默认为 hour）
+		if granularity == "" {
+			granularity = "hour"
+		}
+		period = granularity
+	} else {
+		// 预设周期模式
+		period = r.URL.Query().Get("period")
+		if period == "" {
+			period = "day"
+		}
 	}
 
 	vms, err := s.pveClient.GetAllVMsWithFilter(false)
@@ -1008,7 +1078,17 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 	var allStats []VMStatsResponse
 	for _, vm := range vms {
-		stats, err := s.storage.CalculateTrafficStatsWithDirection(vm.VMID, period, time.Time{}, false, direction)
+		var stats *models.TrafficStats
+		var err error
+
+		if useCustomRange {
+			// 使用自定义时间范围
+			stats, err = s.storage.CalculateTrafficStatsWithTimeRange(vm.VMID, startTime, endTime, direction)
+		} else {
+			// 使用预设周期
+			stats, err = s.storage.CalculateTrafficStatsWithDirection(vm.VMID, period, time.Time{}, false, direction)
+		}
+
 		if err == nil {
 			allStats = append(allStats, VMStatsResponse{
 				VMID:       vm.VMID,
@@ -1071,13 +1151,78 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	period := r.URL.Query().Get("period")
-	if period == "" {
-		period = "day"
+	// 检查是否使用自定义时间范围
+	startStr := r.URL.Query().Get("start")
+	endStr := r.URL.Query().Get("end")
+	granularity := r.URL.Query().Get("granularity")
+
+	var startTime, endTime time.Time
+	var period string
+	var useCustomRange bool
+	var cacheTTL time.Duration
+
+	now := time.Now()
+
+	if startStr != "" && endStr != "" {
+		// 自定义时间范围模式
+		var err error
+		startTime, err = time.Parse(time.RFC3339, startStr)
+		if err != nil {
+			s.sendError(w, "Invalid start time format, use RFC3339", http.StatusBadRequest)
+			return
+		}
+		endTime, err = time.Parse(time.RFC3339, endStr)
+		if err != nil {
+			s.sendError(w, "Invalid end time format, use RFC3339", http.StatusBadRequest)
+			return
+		}
+		useCustomRange = true
+
+		// 设置粒度（默认为 hour）
+		if granularity == "" {
+			granularity = "hour"
+		}
+		period = granularity
+
+		// 自定义范围的缓存时间较短
+		cacheTTL = 30 * time.Second
+	} else {
+		// 预设周期模式
+		period = r.URL.Query().Get("period")
+		if period == "" {
+			period = "day"
+		}
+
+		// 计算时间范围（限制查询范围以优化性能）
+		switch period {
+		case models.PeriodMinute:
+			startTime = now.Add(-1 * time.Hour) // 最近1小时，用于分钟粒度
+			cacheTTL = 30 * time.Second         // 缓存30秒
+		case models.PeriodHour:
+			startTime = now.Add(-24 * time.Hour) // 最近24小时
+			cacheTTL = 1 * time.Minute           // 缓存1分钟
+		case models.PeriodDay:
+			startTime = now.AddDate(0, 0, -30) // 最近30天
+			cacheTTL = 5 * time.Minute         // 缓存5分钟
+		case models.PeriodMonth:
+			startTime = now.AddDate(0, -12, 0) // 最近12个月
+			cacheTTL = 15 * time.Minute        // 缓存15分钟
+		default:
+			s.sendError(w, "Invalid period", http.StatusBadRequest)
+			return
+		}
+		endTime = now
+	}
+
+	// 构建缓存key
+	var cacheKey string
+	if useCustomRange {
+		cacheKey = fmt.Sprintf("history_%d_%s_%s_%s", vmid, period, startTime.Format("20060102150405"), endTime.Format("20060102150405"))
+	} else {
+		cacheKey = fmt.Sprintf("history_%d_%s", vmid, period)
 	}
 
 	// 检查缓存
-	cacheKey := fmt.Sprintf("history_%d_%s", vmid, period)
 	cached, ok := s.getCache(cacheKey)
 	if ok {
 		s.sendJSON(w, map[string]interface{}{
@@ -1089,31 +1234,8 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// 计算时间范围（限制查询范围以优化性能）
-	now := time.Now()
-	var startTime time.Time
-	var cacheTTL time.Duration
-
-	switch period {
-	case models.PeriodMinute:
-		startTime = now.Add(-1 * time.Hour) // 最近1小时，用于分钟粒度
-		cacheTTL = 30 * time.Second         // 缓存30秒
-	case models.PeriodHour:
-		startTime = now.Add(-24 * time.Hour) // 最近24小时
-		cacheTTL = 1 * time.Minute           // 缓存1分钟
-	case models.PeriodDay:
-		startTime = now.AddDate(0, 0, -30) // 最近30天
-		cacheTTL = 5 * time.Minute         // 缓存5分钟
-	case models.PeriodMonth:
-		startTime = now.AddDate(0, -12, 0) // 最近12个月
-		cacheTTL = 15 * time.Minute        // 缓存15分钟
-	default:
-		s.sendError(w, "Invalid period", http.StatusBadRequest)
-		return
-	}
-
 	// 获取历史记录
-	records, err := s.storage.GetTrafficRecords(vmid, startTime, now)
+	records, err := s.storage.GetTrafficRecords(vmid, startTime, endTime)
 	if err != nil {
 		s.sendError(w, "Failed to get traffic records: "+err.Error(), http.StatusInternalServerError)
 		return

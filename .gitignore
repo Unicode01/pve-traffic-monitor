@@ -1,0 +1,39 @@
+# 构建产物
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# 测试文件
+*.test
+*.out
+
+# 数据文件
+data/
+exports/
+*.db
+*.log
+
+# 配置文件（仅保留示例）
+config.json
+
+# 依赖和缓存
+vendor/
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# 前端
+web/node_modules/
+web/dist/
+web/.DS_Store
+
+# 系统文件
+.DS_Store
+Thumbs.db
+*.pid
+nohup.out

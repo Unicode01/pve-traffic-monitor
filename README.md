@@ -18,10 +18,12 @@
 
 ## 🚀 快速开始
 
-### 1. 下载依赖
+### 1. 下载代码并编译
 
 ```bash
-go mod download
+git clone https://github.com/Unicode01/pve-traffic-monitor
+cd pve-traffic-monitor
+./auto.sh build
 ```
 
 ### 2. 配置
@@ -284,7 +286,7 @@ CLI 工具支持多种导出格式：**JSON**、**PNG**、**HTML**（默认）
 
 ```bash
 # 导出为交互式 HTML（默认格式，推荐）
-./bin/monitor -config config.json -export 100 -period day
+./bin/monitor -config config.json -export 100 -period hour
 
 # 导出为 HTML（暗色主题）
 ./bin/monitor -config config.json -export 100 -period day -format html -dark
@@ -301,17 +303,32 @@ CLI 工具支持多种导出格式：**JSON**、**PNG**、**HTML**（默认）
 # 导出指定日期的数据
 ./bin/monitor -config config.json -export 100 -date 2024-01-15 -format html
 
-# 导出指定时间范围
+# 导出指定时间范围（使用默认小时聚合）
 ./bin/monitor -config config.json -export 100 -start "2024-01-01" -end "2024-01-31" -format html
+
+# 导出两天内的数据，按分钟聚合
+./bin/monitor -config config.json -export 100 -start "2024-01-20" -end "2024-01-22" -period minute -format html
+
+# 导出一周内的数据，按小时聚合
+./bin/monitor -config config.json -export 100 -start "2024-01-15" -end "2024-01-22" -period hour -format html
+
+# 导出一个月的数据，按天聚合
+./bin/monitor -config config.json -export 100 -start "2024-01-01" -end "2024-01-31" -period day -format html
 ```
 
 **参数说明：**
 - `-format`: 导出格式（json/png/html），默认：html
 - `-dark`: 使用暗色主题（仅 HTML 格式）
 - `-direction`: 流量方向（both/rx/tx）
-- `-period`: 统计周期（hour/day/month）
+- `-period`: 聚合粒度（minute/hour/day/month），也用于确定默认时间范围
+  - `minute`: 按分钟聚合（默认查询最近 1 小时）
+  - `hour`: 按小时聚合（默认查询最近 24 小时）
+  - `day`: 按天聚合（默认查询最近 30 天）
+  - `month`: 按月聚合（默认查询最近 1 年）
 - `-date`: 指定日期（格式：2006-01-02）
-- `-start` 和 `-end`: 自定义时间范围
+- `-start` 和 `-end`: 自定义时间范围，可配合 `-period` 指定聚合粒度
+
+**自定义时间范围 + 聚合粒度**：使用 `-start` 和 `-end` 指定时间范围时，可以通过 `-period` 参数自定义数据聚合粒度。例如，查询两天内的数据并按分钟聚合，可以看到每分钟的流量变化趋势。
 
 图表保存在配置的 `export_path` 目录中。
 

@@ -30,18 +30,29 @@ func NewExporter(exportPath string) (*Exporter, error) {
 
 // ExportTrafficChart 导出流量图表（显示时间序列的流量变化趋势）
 func (e *Exporter) ExportTrafficChart(vmid int, vmName string, records []models.TrafficRecord) (string, error) {
-	return e.ExportTrafficChartWithRange(vmid, vmName, records, time.Time{}, time.Time{})
+	return e.ExportTrafficChartWithRangeAndPeriod(vmid, vmName, records, time.Time{}, time.Time{}, "hour")
 }
 
-// ExportTrafficChartWithRange 导出流量图表（带时间范围信息）
+// ExportTrafficChartWithRange 导出流量图表（带时间范围信息，默认按小时聚合）
 func (e *Exporter) ExportTrafficChartWithRange(vmid int, vmName string, records []models.TrafficRecord, startTime, endTime time.Time) (string, error) {
+	return e.ExportTrafficChartWithRangeAndPeriod(vmid, vmName, records, startTime, endTime, "hour")
+}
+
+// ExportTrafficChartWithRangeAndPeriod 导出流量图表（带时间范围和自定义聚合周期）
+// period: minute/hour/day/month
+func (e *Exporter) ExportTrafficChartWithRangeAndPeriod(vmid int, vmName string, records []models.TrafficRecord, startTime, endTime time.Time, period string) (string, error) {
 	if len(records) == 0 {
 		return "", fmt.Errorf("no traffic records")
 	}
 
+	// 验证 period 参数
+	if period == "" {
+		period = "hour"
+	}
+
 	// 按时间段聚合数据，显示趋势而不是累计值
 	// 使用共用的聚合函数，与API保持一致
-	aggregated := storage.AggregateTrafficByPeriod(records, "hour")
+	aggregated := storage.AggregateTrafficByPeriod(records, period)
 
 	if len(aggregated) == 0 {
 		return "", fmt.Errorf("no aggregated data")
@@ -89,6 +100,21 @@ func (e *Exporter) ExportTrafficChartWithRange(vmid int, vmName string, records 
 			endTime.Format("01-02 15:04"))
 	}
 
+	// 根据 period 选择时间显示格式
+	var timeFormat string
+	switch period {
+	case "minute":
+		timeFormat = "01-02 15:04"
+	case "hour":
+		timeFormat = "01-02 15:04"
+	case "day":
+		timeFormat = "01-02"
+	case "month":
+		timeFormat = "2006-01"
+	default:
+		timeFormat = "01-02 15:04"
+	}
+
 	// 现代化配色方案（与前端一致）
 	colorDownload := drawing.Color{R: 54, G: 162, B: 235, A: 255}    // 蓝色
 	colorUpload := drawing.Color{R: 75, G: 192, B: 192, A: 255}      // 青色
@@ -127,7 +153,7 @@ func (e *Exporter) ExportTrafficChartWithRange(vmid int, vmName string, records 
 				StrokeColor: drawing.Color{R: 200, G: 200, B: 200, A: 255},
 				StrokeWidth: 1,
 			},
-			ValueFormatter: chart.TimeValueFormatterWithFormat("01-02 15:04"),
+			ValueFormatter: chart.TimeValueFormatterWithFormat(timeFormat),
 			GridMajorStyle: chart.Style{
 				StrokeColor: colorGrid,
 				StrokeWidth: 1,
