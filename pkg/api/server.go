@@ -195,16 +195,48 @@ func (s *Server) performanceMiddleware(handler http.HandlerFunc) http.HandlerFun
 	}
 }
 
+// authMiddleware token 验证中间件
+func (s *Server) authMiddleware(handler http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// 如果没有配置 token，直接放行
+		if s.config.API.Token == "" {
+			handler(w, r)
+			return
+		}
+
+		// 从多个来源获取 token
+		token := r.Header.Get("X-API-Token")
+		if token == "" {
+			token = r.Header.Get("Authorization")
+			// 支持 Bearer token 格式
+			if len(token) > 7 && token[:7] == "Bearer " {
+				token = token[7:]
+			}
+		}
+		if token == "" {
+			token = r.URL.Query().Get("token")
+		}
+
+		// 验证 token
+		if token != s.config.API.Token {
+			s.sendError(w, "Unauthorized: invalid or missing token", http.StatusUnauthorized)
+			return
+		}
+
+		handler(w, r)
+	}
+}
+
 // setupRoutes 设置路由
 func (s *Server) setupRoutes() {
-	// API 路由
-	s.mux.HandleFunc("/api/vms", s.performanceMiddleware(s.handleVMs))
-	s.mux.HandleFunc("/api/vm/", s.performanceMiddleware(s.handleVM))
-	s.mux.HandleFunc("/api/stats", s.performanceMiddleware(s.handleStats))
-	s.mux.HandleFunc("/api/history/", s.performanceMiddleware(s.handleHistory))
-	s.mux.HandleFunc("/api/logs", s.performanceMiddleware(s.handleLogs))
-	s.mux.HandleFunc("/api/rules", s.performanceMiddleware(s.handleRules))
-	s.mux.HandleFunc("/api/system/stats", s.performanceMiddleware(s.handleSystemStats))
+	// API 路由（带认证和性能监控中间件）
+	s.mux.HandleFunc("/api/vms", s.performanceMiddleware(s.authMiddleware(s.handleVMs)))
+	s.mux.HandleFunc("/api/vm/", s.performanceMiddleware(s.authMiddleware(s.handleVM)))
+	s.mux.HandleFunc("/api/stats", s.performanceMiddleware(s.authMiddleware(s.handleStats)))
+	s.mux.HandleFunc("/api/history/", s.performanceMiddleware(s.authMiddleware(s.handleHistory)))
+	s.mux.HandleFunc("/api/logs", s.performanceMiddleware(s.authMiddleware(s.handleLogs)))
+	s.mux.HandleFunc("/api/rules", s.performanceMiddleware(s.authMiddleware(s.handleRules)))
+	s.mux.HandleFunc("/api/system/stats", s.performanceMiddleware(s.authMiddleware(s.handleSystemStats)))
 
 	// 静态文件（前端）
 	// 优先使用构建后的web/dist目录，如果不存在则使用内嵌的简化版本
@@ -284,7 +316,7 @@ func (s *Server) corsMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
 		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-API-Token")
 
 		if r.Method == "OPTIONS" {
 			w.WriteHeader(http.StatusOK)
@@ -354,6 +386,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
             <div class="tabs">
                 <button class="tab active" onclick="switchTab('overview')">Overview</button>
                 <button class="tab" onclick="switchTab('charts')">Charts</button>
+                <button class="tab" onclick="showTokenPrompt()" style="background: rgba(255,255,255,0.1);">Token</button>
             </div>
         </header>
         
@@ -452,6 +485,42 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
         let topVMsChart = null;
         let vmDetailChart = null;
 
+        // Token 管理
+        function getApiToken() {
+            return localStorage.getItem('api_token') || '';
+        }
+
+        function setApiToken(token) {
+            if (token) {
+                localStorage.setItem('api_token', token);
+            } else {
+                localStorage.removeItem('api_token');
+            }
+        }
+
+        function showTokenPrompt() {
+            const token = prompt('Enter API Token (leave empty for no auth):', getApiToken());
+            if (token !== null) {
+                setApiToken(token);
+                loadData();
+            }
+        }
+
+        // Fetch with token
+        async function apiFetch(url) {
+            const token = getApiToken();
+            const options = {};
+            if (token) {
+                options.headers = { 'X-API-Token': token };
+            }
+            const response = await fetch(url, options);
+            if (response.status === 401) {
+                showTokenPrompt();
+                throw new Error('Unauthorized');
+            }
+            return response;
+        }
+
         function formatBytes(bytes) {
             if (bytes === 0) return '0 B';
             const k = 1024;
@@ -477,7 +546,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
         
         async function loadData() {
             try {
-                const response = await fetch('/api/vms');
+                const response = await apiFetch('/api/vms');
                 const data = await response.json();
                 
                 if (data.success) {
@@ -497,16 +566,16 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
             
             try {
                 // 获取流量统计
-                const statsResp = await fetch('/api/stats?period=day&direction=both');
+                const statsResp = await apiFetch('/api/stats?period=day&direction=both');
                 const statsData = await statsResp.json();
                 let totalTrafficBytes = 0;
-                
+
                 if (statsData.success && statsData.data) {
                     totalTrafficBytes = statsData.data.reduce((sum, stat) => sum + stat.total_bytes, 0);
                 }
-                
+
                 // 获取系统统计
-                const sysStatsResp = await fetch('/api/system/stats');
+                const sysStatsResp = await apiFetch('/api/system/stats');
                 const sysStatsData = await sysStatsResp.json();
                 
                 document.getElementById('total-vms').textContent = total;
@@ -646,7 +715,7 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
             const direction = document.getElementById('chart-direction').value;
 
             try {
-                const response = await fetch('/api/stats?period=' + period + '&direction=' + direction);
+                const response = await apiFetch('/api/stats?period=' + period + '&direction=' + direction);
                 const data = await response.json();
 
                 if (data.success && data.data) {
@@ -790,11 +859,11 @@ func (s *Server) handleIndex(w http.ResponseWriter, r *http.Request) {
 
             try {
                 // 加载统计信息
-                const statsResponse = await fetch('/api/vm/' + currentVMID);
+                const statsResponse = await apiFetch('/api/vm/' + currentVMID);
                 const statsData = await statsResponse.json();
 
                 // 加载历史数据
-                const historyResponse = await fetch('/api/history/' + currentVMID + '?period=' + period);
+                const historyResponse = await apiFetch('/api/history/' + currentVMID + '?period=' + period);
                 const historyData = await historyResponse.json();
 
                 if (statsData.success && historyData.success) {

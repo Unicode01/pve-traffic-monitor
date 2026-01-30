@@ -634,6 +634,9 @@ generate_config() {
             print_info "已取消"
             return 0
         fi
+        # 备份原配置文件
+        print_info "备份原配置文件到 ${config_file}.bak"
+        cp "$config_file" "${config_file}.bak"
     fi
     
     echo "请按提示输入配置信息（直接回车使用默认值）"
@@ -753,12 +756,17 @@ generate_config() {
         api_enabled="false"
         api_host="0.0.0.0"
         api_port="8080"
+        api_token=""
     else
         api_enabled="true"
         read -p "API 监听地址 [0.0.0.0]: " api_host
         api_host=${api_host:-0.0.0.0}
         read -p "API 监听端口 [8080]: " api_port
         api_port=${api_port:-8080}
+        echo ""
+        print_info "API Token 用于保护 Web 界面，配置后需要输入 Token 才能查看数据"
+        read -p "API Token（留空则不验证）: " api_token
+        api_token=${api_token:-}
     fi
     
     # ========== 流量规则配置 ==========
@@ -904,7 +912,8 @@ $storage_json,
     "api": {
         "enabled": $api_enabled,
         "host": "$api_host",
-        "port": $api_port
+        "port": $api_port,
+        "token": "$api_token"
     },
     "rules": [
         $rules_json
@@ -955,6 +964,11 @@ CONFIG_EOF
     echo "  启用: $api_enabled"
     if [ "$api_enabled" = "true" ]; then
         echo "  地址: http://$api_host:$api_port"
+        if [ -n "$api_token" ]; then
+            echo "  Token: 已配置（需要认证）"
+        else
+            echo "  Token: 未配置（无需认证）"
+        fi
     fi
     echo ""
     

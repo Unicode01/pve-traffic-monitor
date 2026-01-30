@@ -61,6 +61,7 @@ type APIConfig struct {
 	Enabled bool   `json:"enabled"` // 是否启用 API 服务器
 	Host    string `json:"host"`    // API 监听地址
 	Port    int    `json:"port"`    // API 监听端口
+	Token   string `json:"token"`   // API 访问令牌（留空则不验证）
 }
 
 // VMInfo 虚拟机信息
