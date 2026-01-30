@@ -28,7 +28,7 @@ var (
 	exportCmd    = flag.String("export", "", "导出图表 (格式: vm_id 或 all)")
 	exportFormat = flag.String("format", "html", "导出格式 (json/png/html), 默认: html")
 	useDarkTheme = flag.Bool("dark", false, "使用暗色主题 (仅html格式)")
-	period       = flag.String("period", "day", "统计周期 (hour/day/month)")
+	period       = flag.String("period", "hour", "聚合粒度 (minute/hour/day/month), 也用于确定默认时间范围")
 	direction    = flag.String("direction", "both", "流量方向 (both/rx/tx)")
 	startTime    = flag.String("start", "", "开始时间 (格式: 2006-01-02 或 2006-01-02T15:04:05)")
 	endTime      = flag.String("end", "", "结束时间 (格式: 2006-01-02 或 2006-01-02T15:04:05)")
@@ -688,6 +688,12 @@ func (m *Monitor) exportVM(vmid int, period string) error {
 		return fmt.Errorf("无效的导出格式: %s (支持: json/png/html)", format)
 	}
 
+	// 验证 period 参数
+	validPeriods := map[string]bool{"minute": true, "hour": true, "day": true, "month": true}
+	if !validPeriods[period] {
+		return fmt.Errorf("无效的聚合周期: %s (支持: minute/hour/day/month)", period)
+	}
+
 	// 计算时间范围
 	now := time.Now()
 	var start, end time.Time
@@ -704,6 +710,8 @@ func (m *Monitor) exportVM(vmid int, period string) error {
 		if err != nil {
 			return fmt.Errorf("解析结束时间失败: %w", err)
 		}
+		// 自定义时间范围时，period 参数用于控制聚合粒度
+		log.Printf("使用自定义时间范围，聚合粒度: %s\n", period)
 	} else if *exportDate != "" {
 		// 指定日期（导出某天的数据）
 		date, err := time.ParseInLocation("2006-01-02", *exportDate, time.Local)
@@ -713,16 +721,16 @@ func (m *Monitor) exportVM(vmid int, period string) error {
 		start = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
 		end = start.Add(24 * time.Hour)
 	} else {
-		// 使用period参数
+		// 使用period参数确定时间范围
 		switch period {
+		case "minute":
+			start = now.Add(-1 * time.Hour) // 最近1小时，按分钟聚合
 		case "hour":
-			start = now.Add(-1 * time.Hour)
+			start = now.Add(-24 * time.Hour) // 最近24小时，按小时聚合
 		case "day":
-			start = now.Add(-24 * time.Hour)
+			start = now.AddDate(0, 0, -30) // 最近30天，按天聚合
 		case "month":
-			start = now.AddDate(0, -1, 0)
-		default:
-			return fmt.Errorf("不支持的周期: %s", period)
+			start = now.AddDate(-1, 0, 0) // 最近1年，按月聚合
 		}
 		end = now
 	}
@@ -745,7 +753,7 @@ func (m *Monitor) exportVM(vmid int, period string) error {
 
 	var filename string
 
-	// 根据格式导出
+	// 根据格式导出（使用带 period 参数的新函数）
 	switch format {
 	case "json":
 		filename, err = m.exporter.ExportJSONData(vmid, vmInfo.Name, records, start, end)
@@ -753,12 +761,12 @@ func (m *Monitor) exportVM(vmid int, period string) error {
 			return fmt.Errorf("导出JSON失败: %w", err)
 		}
 	case "png":
-		filename, err = m.exporter.ExportTrafficChartWithRange(vmid, vmInfo.Name, records, start, end)
+		filename, err = m.exporter.ExportTrafficChartWithRangeAndPeriod(vmid, vmInfo.Name, records, start, end, period)
 		if err != nil {
 			return fmt.Errorf("导出PNG图表失败: %w", err)
 		}
 	case "html":
-		filename, err = m.exporter.ExportHTMLChartWithRange(vmid, vmInfo.Name, records, start, end, *useDarkTheme)
+		filename, err = m.exporter.ExportHTMLChartWithRangeAndPeriod(vmid, vmInfo.Name, records, start, end, period, *useDarkTheme)
 		if err != nil {
 			return fmt.Errorf("导出HTML图表失败: %w", err)
 		}
@@ -766,7 +774,8 @@ func (m *Monitor) exportVM(vmid int, period string) error {
 
 	log.Printf("已导出 (%s): %s\n", format, filename)
 	log.Printf("时间范围: %s - %s\n", start.Format("2006-01-02 15:04"), end.Format("2006-01-02 15:04"))
-	log.Printf("数据点数: %d\n", len(records))
+	log.Printf("聚合粒度: %s\n", period)
+	log.Printf("原始数据点数: %d\n", len(records))
 	return nil
 }
 

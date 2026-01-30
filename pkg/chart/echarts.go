@@ -15,17 +15,28 @@ import (
 
 // ExportHTMLChart 导出HTML图表（使用go-echarts）
 func (e *Exporter) ExportHTMLChart(vmid int, vmName string, records []models.TrafficRecord, isDark bool) (string, error) {
-	return e.ExportHTMLChartWithRange(vmid, vmName, records, time.Time{}, time.Time{}, isDark)
+	return e.ExportHTMLChartWithRangeAndPeriod(vmid, vmName, records, time.Time{}, time.Time{}, "hour", isDark)
 }
 
-// ExportHTMLChartWithRange 导出HTML图表（带时间范围信息）
+// ExportHTMLChartWithRange 导出HTML图表（带时间范围信息，默认按小时聚合）
 func (e *Exporter) ExportHTMLChartWithRange(vmid int, vmName string, records []models.TrafficRecord, startTime, endTime time.Time, isDark bool) (string, error) {
+	return e.ExportHTMLChartWithRangeAndPeriod(vmid, vmName, records, startTime, endTime, "hour", isDark)
+}
+
+// ExportHTMLChartWithRangeAndPeriod 导出HTML图表（带时间范围和自定义聚合周期）
+// period: minute/hour/day/month
+func (e *Exporter) ExportHTMLChartWithRangeAndPeriod(vmid int, vmName string, records []models.TrafficRecord, startTime, endTime time.Time, period string, isDark bool) (string, error) {
 	if len(records) == 0 {
 		return "", fmt.Errorf("no traffic records")
 	}
 
+	// 验证 period 参数
+	if period == "" {
+		period = "hour"
+	}
+
 	// 使用storage包的正确聚合函数（计算增量而非累积值）
-	aggregated := storage.AggregateTrafficByPeriod(records, "hour")
+	aggregated := storage.AggregateTrafficByPeriod(records, period)
 
 	if len(aggregated) == 0 {
 		return "", fmt.Errorf("no aggregated data")
@@ -63,8 +74,23 @@ func (e *Exporter) ExportHTMLChartWithRange(vmid int, vmName string, records []m
 		unitLabel = "MB"
 	}
 
+	// 根据 period 选择时间显示格式
+	var timeFormat string
+	switch period {
+	case "minute":
+		timeFormat = "01-02 15:04"
+	case "hour":
+		timeFormat = "01-02 15:04"
+	case "day":
+		timeFormat = "01-02"
+	case "month":
+		timeFormat = "2006-01"
+	default:
+		timeFormat = "01-02 15:04"
+	}
+
 	for _, point := range aggregated {
-		xAxis = append(xAxis, point.Timestamp.Format("01-02 15:04"))
+		xAxis = append(xAxis, point.Timestamp.Format(timeFormat))
 		rxValue := float64(point.RXBytes) / divisor
 		txValue := float64(point.TXBytes) / divisor
 		totalValue := float64(point.TotalBytes) / divisor

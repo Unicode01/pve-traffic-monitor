@@ -150,10 +150,20 @@ curl http://localhost:8080/api/vm/100
 **请求**:
 ```
 GET /api/stats?period={period}
+GET /api/stats?start={start}&end={end}&granularity={granularity}
 ```
 
 **参数**:
-- `period`: 统计周期（hour/day/month），默认 day
+
+*预设周期模式:*
+- `period`: 统计周期（minute/hour/day/month），默认 day
+- `direction`: 流量方向（both/rx/tx），默认 both
+
+*自定义时间范围模式:*
+- `start`: 开始时间（RFC3339 格式，如 2024-01-20T00:00:00Z）
+- `end`: 结束时间（RFC3339 格式）
+- `granularity`: 数据粒度（minute/hour/day/month），默认 hour
+- `direction`: 流量方向（both/rx/tx），默认 both
 
 **响应**:
 ```json
@@ -162,19 +172,14 @@ GET /api/stats?period={period}
   "data": [
     {
       "vmid": 100,
+      "name": "vm-100",
       "period": "day",
+      "direction": "both",
       "start_time": "2024-01-24T00:00:00Z",
       "end_time": "2024-01-24T11:00:00Z",
       "total_bytes": 1073741824,
-      "total_gb": 1.0
-    },
-    {
-      "vmid": 101,
-      "period": "day",
-      "start_time": "2024-01-24T00:00:00Z",
-      "end_time": "2024-01-24T11:00:00Z",
-      "total_bytes": 536870912,
-      "total_gb": 0.5
+      "rx_bytes": 536870912,
+      "tx_bytes": 536870912
     }
   ]
 }
@@ -182,16 +187,76 @@ GET /api/stats?period={period}
 
 **curl 示例**:
 ```bash
-# 获取日统计
+# 获取日统计（预设周期）
 curl http://localhost:8080/api/stats?period=day
 
 # 获取月统计
 curl http://localhost:8080/api/stats?period=month
+
+# 获取自定义时间范围（最近7天，按天聚合）
+curl "http://localhost:8080/api/stats?start=2024-01-17T00:00:00Z&end=2024-01-24T23:59:59Z&granularity=day"
+
+# 获取自定义时间范围（最近24小时，按小时聚合，仅下载流量）
+curl "http://localhost:8080/api/stats?start=2024-01-23T12:00:00Z&end=2024-01-24T12:00:00Z&granularity=hour&direction=rx"
 ```
 
 ---
 
-### 4. 获取操作日志
+### 4. 获取虚拟机历史流量数据
+
+**请求**:
+```
+GET /api/history/{vmid}?period={period}
+GET /api/history/{vmid}?start={start}&end={end}&granularity={granularity}
+```
+
+**参数**:
+- `vmid`: 虚拟机 ID
+
+*预设周期模式:*
+- `period`: 统计周期
+  - `minute`: 最近1小时，按分钟聚合
+  - `hour`: 最近24小时，按小时聚合
+  - `day`: 最近30天，按天聚合
+  - `month`: 最近12个月，按月聚合
+
+*自定义时间范围模式:*
+- `start`: 开始时间（RFC3339 格式）
+- `end`: 结束时间（RFC3339 ��式）
+- `granularity`: 数据粒度（minute/hour/day/month），默认 hour
+
+**响应**:
+```json
+{
+  "success": true,
+  "data": [
+    {
+      "timestamp": "2024-01-24",
+      "rx_bytes": 536870912,
+      "tx_bytes": 268435456,
+      "total_bytes": 805306368
+    }
+  ],
+  "period": "day",
+  "cached": false
+}
+```
+
+**curl 示例**:
+```bash
+# 获取最近24小时数据（按小时）
+curl http://localhost:8080/api/history/100?period=hour
+
+# 获取最近30天数据（按天）
+curl http://localhost:8080/api/history/100?period=day
+
+# 获取自定义时间范围（指定日期，按小时聚合）
+curl "http://localhost:8080/api/history/100?start=2024-01-20T00:00:00Z&end=2024-01-24T23:59:59Z&granularity=hour"
+```
+
+---
+
+### 5. 获取操作日志
 
 **请求**:
 ```
@@ -238,7 +303,7 @@ curl "http://localhost:8080/api/logs?start=2024-01-20T00:00:00Z&end=2024-01-24T2
 
 ---
 
-### 5. 获取规则列表
+### 6. 获取规则列表
 
 **请求**:
 ```
