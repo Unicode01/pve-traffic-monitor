@@ -82,6 +82,17 @@
     "kb": "KB",
     "mb": "MB",
     "gb": "GB",
-    "tb": "TB"
+    "tb": "TB",
+    "cancel": "取消"
+  },
+  "auth": {
+    "tokenRequired": "API 认证",
+    "apiToken": "访问令牌",
+    "enterToken": "请输入 API Token",
+    "tokenHint": "如果服务端配置了 Token 验证，请输入正确的 Token 才能访问数据。留空则不使用认证。",
+    "confirm": "确定",
+    "tokenSaved": "Token 已保存",
+    "tokenCleared": "Token 已清除",
+    "setToken": "设置 Token"
   }
 }

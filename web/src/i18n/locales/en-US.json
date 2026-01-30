@@ -82,6 +82,17 @@
     "kb": "KB",
     "mb": "MB",
     "gb": "GB",
-    "tb": "TB"
+    "tb": "TB",
+    "cancel": "Cancel"
+  },
+  "auth": {
+    "tokenRequired": "API Authentication",
+    "apiToken": "Access Token",
+    "enterToken": "Enter API Token",
+    "tokenHint": "If the server has token verification enabled, enter the correct token to access data. Leave empty for no authentication.",
+    "confirm": "Confirm",
+    "tokenSaved": "Token saved",
+    "tokenCleared": "Token cleared",
+    "setToken": "Set Token"
   }
 }

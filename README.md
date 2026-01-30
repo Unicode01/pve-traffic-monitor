@@ -10,6 +10,7 @@
 - ⏰ **多周期限制**: 支持按小时/天/月设置流量限制
 - 🚫 **自动操作**: 超出流量限制后自动关机或限速
 - 🌐 **可选 Web 界面**: Vue 3 + Element Plus，支持明暗主题和中英文切换（可禁用）
+- 🔐 **API Token 认证**: 可选的 Web API 访问令牌保护，防止未授权访问
 - 📈 **多格式导出**: 支持导出 JSON/PNG/HTML（go-echarts）格式
 - 🎨 **统一配色**: 前后端使用一致的配色方案
 - 🏷️ **标签过滤**: 支持根据虚拟机标签应用不同规则
@@ -39,7 +40,7 @@ cd pve-traffic-monitor
 - **PVE 连接配置**: 主机地址、端口、节点名称、API Token
 - **监控配置**: 监控间隔、数据保留天数
 - **存储配置**: 支持文件/SQLite/MySQL/PostgreSQL
-- **Web API 配置**: 是否启用 Web 界面
+- **Web API 配置**: 是否启用 Web 界面、API Token 认证
 - **流量规则配置**: 支持创建多条规则，每条规则可配置：
   - 规则名称和周期（小时/天/月）
   - 流量方向（双向/上传/下载）
@@ -212,15 +213,28 @@ npm run build    # 构建生产版本
   "api": {
     "enabled": true,        // 是否启用 Web API（可选，仅用于 Web 界面）
     "host": "0.0.0.0",      // 监听地址，0.0.0.0 表示所有接口
-    "port": 8080            // 监听端口
+    "port": 8080,           // 监听端口
+    "token": ""             // API 访问令牌（留空则不验证）
   }
 }
 ```
 
-**说明**: 
+**说明**:
 - `api.enabled: true` - 启用 Web 界面和 HTTP API
 - `api.enabled: false` - 禁用 Web 界面，系统仍然正常运行，仅通过后台监控和 CLI 导出
+- `api.token` - API 访问令牌，用于保护 Web 界面
+  - **留空**: 任何人都可以访问 Web 界面（适合内网使用）
+  - **设置值**: 需要提供正确的 Token 才能查看数据（推荐公网使用）
 - 系统核心功能完全通过 **PVE API** 运行，本配置的 API 仅用于 Web 可视化
+
+**Token 认证方式**（当 `api.token` 非空时）:
+- HTTP Header: `X-API-Token: your-token`
+- HTTP Header: `Authorization: Bearer your-token`
+- URL 参数: `?token=your-token`
+
+**前端设置 Token**:
+- 点击 Web 界面右上角的钥匙图标设置 Token
+- 或在首次访问返回 401 时会自动弹出 Token 输入框
 
 ### 流量规则配置
 
@@ -251,6 +265,21 @@ npm run build    # 构建生产版本
 ## 🌐 Web API 接口（可选）
 
 启用 Web API (`api.enabled: true`) 后，可以通过 HTTP 访问以下接口：
+
+### 认证
+
+如果配置了 `api.token`，所有 API 请求都需要提供 Token：
+
+```bash
+# 方式1: X-API-Token Header
+curl -H "X-API-Token: your-token" http://localhost:8080/api/vms
+
+# 方式2: Authorization Bearer Header
+curl -H "Authorization: Bearer your-token" http://localhost:8080/api/vms
+
+# 方式3: URL 参数
+curl http://localhost:8080/api/vms?token=your-token
+```
 
 ### 页面
 
@@ -478,23 +507,33 @@ cat /opt/pve-traffic-monitor/config.json
 
 ## 🔒 安全建议
 
-1. **保护 API Token**: API Token 拥有完整权限，请妥善保管
+1. **保护 PVE API Token**: API Token 拥有完整权限，请妥善保管
    ```bash
    chmod 600 config.json
    ```
 
-2. **限制 API 访问**: 修改 `api.host` 为 `127.0.0.1` 仅允许本地访问
+2. **启用 Web API Token 认证**: 在公网环境中，务必设置 `api.token`
+   ```json
+   {
+     "api": {
+       "enabled": true,
+       "token": "your-secure-random-token"
+     }
+   }
+   ```
 
-3. **使用防火墙**: 限制 API 端口的访问来源
+3. **限制 API 访问**: 修改 `api.host` 为 `127.0.0.1` 仅允许本地访问
+
+4. **使用防火墙**: 限制 API 端口的访问来源
    ```bash
    # 仅允许特定 IP 访问
    iptables -A INPUT -p tcp --dport 8080 -s 192.168.1.0/24 -j ACCEPT
    iptables -A INPUT -p tcp --dport 8080 -j DROP
    ```
 
-4. **定期备份**: 备份数据库或 `data` 目录中的数据
+5. **定期备份**: 备份数据库或 `data` 目录中的数据
 
-5. **最小权限原则**: 为 API Token 分配所需的最小权限集
+6. **最小权限原则**: 为 PVE API Token 分配所需的最小权限集
 
 ## 📝 系统要求
 

@@ -25,7 +25,9 @@
 
       <div class="header-right">
         <el-button @click="handleRefresh" :icon="Refresh" circle />
-        
+
+        <el-button @click="handleTokenSetting" :icon="Key" circle :title="t('auth.setToken')" />
+
         <el-dropdown @command="handleLangChange">
           <el-button :icon="Promotion" circle />
           <template #dropdown>
@@ -58,7 +60,7 @@ import { computed } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useI18n } from 'vue-i18n'
 import { useThemeStore } from '@/stores/theme'
-import { HomeFilled, TrendCharts, Refresh, Promotion, Moon, Sunny } from '@element-plus/icons-vue'
+import { HomeFilled, TrendCharts, Refresh, Promotion, Moon, Sunny, Key } from '@element-plus/icons-vue'
 
 const router = useRouter()
 const route = useRoute()
@@ -79,6 +81,11 @@ const handleMenuSelect = (index) => {
 const handleRefresh = () => {
   // 触发数据刷新事件
   window.dispatchEvent(new Event('refresh-data'))
+}
+
+const handleTokenSetting = () => {
+  // 触发显示 token 设置对话框事件
+  window.dispatchEvent(new Event('show-token-dialog'))
 }
 
 const handleLangChange = (lang) => {
