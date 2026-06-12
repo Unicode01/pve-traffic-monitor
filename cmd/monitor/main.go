@@ -718,8 +718,7 @@ func (m *Monitor) exportVM(vmid int, period string) error {
 		if err != nil {
 			return fmt.Errorf("解析日期失败: %w (格式应为: 2006-01-02)", err)
 		}
-		start = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
-		end = start.Add(24 * time.Hour)
+		start, end = dayBounds(date)
 	} else {
 		// 使用period参数确定时间范围
 		switch period {
@@ -797,6 +796,11 @@ func (m *Monitor) parseTimeParam(timeStr string) (time.Time, error) {
 	}
 
 	return time.Time{}, fmt.Errorf("无效的时间格式: %s (支持格式: 2006-01-02 或 2006-01-02T15:04:05)", timeStr)
+}
+
+func dayBounds(date time.Time) (time.Time, time.Time) {
+	start := time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
+	return start, start.AddDate(0, 0, 1).Add(-time.Nanosecond)
 }
 
 func (m *Monitor) exportAllVMs(period string) error {
@@ -1053,8 +1057,7 @@ func (m *Monitor) cleanupVM() error {
 		if err != nil {
 			return fmt.Errorf("解析日期失败: %w", err)
 		}
-		start = time.Date(date.Year(), date.Month(), date.Day(), 0, 0, 0, 0, date.Location())
-		end = start.Add(24 * time.Hour)
+		start, end = dayBounds(date)
 	} else if *startTime != "" && *endTime != "" {
 		// 清除指定时间段的数据
 		start, err = m.parseTimeParam(*startTime)

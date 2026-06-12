@@ -4,9 +4,12 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"pve-traffic-monitor/pkg/models"
 	"pve-traffic-monitor/pkg/utils"
 	"sort"
+	"strings"
 	"time"
 
 	_ "github.com/go-sql-driver/mysql" // MySQL driver
@@ -31,6 +34,12 @@ func NewDatabaseStorage(driverType, dsn string, maxOpenConns, maxIdleConns, conn
 	}
 	if connMaxLifetime <= 0 {
 		connMaxLifetime = 3600
+	}
+
+	if driverType == "sqlite3" {
+		if err := ensureSQLiteDatabaseDir(dsn); err != nil {
+			return nil, err
+		}
 	}
 
 	// 连接数据库
@@ -65,31 +74,38 @@ func NewDatabaseStorage(driverType, dsn string, maxOpenConns, maxIdleConns, conn
 
 // initTables 初始化数据库表
 func (s *DatabaseStorage) initTables() error {
+	trafficRecordIndex := ""
+	actionLogIndex := ""
+	if s.driverType == "mysql" {
+		trafficRecordIndex = `,
+		INDEX idx_vmid_timestamp (vmid, timestamp)`
+		actionLogIndex = `,
+		INDEX idx_timestamp (timestamp)`
+	}
+
 	// 流量记录表
-	trafficRecordsTable := `
+	trafficRecordsTable := fmt.Sprintf(`
 	CREATE TABLE IF NOT EXISTS traffic_records (
-		id INTEGER PRIMARY KEY ` + s.autoIncrement() + `,
+		%s,
 		vmid INTEGER NOT NULL,
 		timestamp TIMESTAMP NOT NULL,
 		rx_bytes BIGINT NOT NULL,
 		tx_bytes BIGINT NOT NULL,
-		total_bytes BIGINT NOT NULL,
-		INDEX idx_vmid_timestamp (vmid, timestamp)
-	)` + s.engine()
+		total_bytes BIGINT NOT NULL%s
+	)%s`, s.idColumn(), trafficRecordIndex, s.engine())
 
 	// 操作日志表
-	actionLogsTable := `
+	actionLogsTable := fmt.Sprintf(`
 	CREATE TABLE IF NOT EXISTS action_logs (
-		id INTEGER PRIMARY KEY ` + s.autoIncrement() + `,
+		%s,
 		vmid INTEGER NOT NULL,
 		rule_name VARCHAR(255) NOT NULL,
 		action VARCHAR(50) NOT NULL,
 		reason TEXT,
 		timestamp TIMESTAMP NOT NULL,
 		success BOOLEAN NOT NULL,
-		error TEXT,
-		INDEX idx_timestamp (timestamp)
-	)` + s.engine()
+		error TEXT%s
+	)%s`, s.idColumn(), actionLogIndex, s.engine())
 
 	// VM状态表
 	vmStatesTable := `
@@ -107,20 +123,38 @@ func (s *DatabaseStorage) initTables() error {
 		}
 	}
 
+	for _, index := range s.indexStatements() {
+		if _, err := s.db.Exec(index); err != nil {
+			return fmt.Errorf("创建索引失败: %w", err)
+		}
+	}
+
 	return nil
 }
 
-// autoIncrement 返回自增主键语法
-func (s *DatabaseStorage) autoIncrement() string {
+// idColumn 返回自增主键字段定义
+func (s *DatabaseStorage) idColumn() string {
 	switch s.driverType {
 	case "mysql":
-		return "AUTO_INCREMENT"
+		return "id INTEGER PRIMARY KEY AUTO_INCREMENT"
 	case "postgres":
-		return "" // PostgreSQL 使用 SERIAL
+		return "id SERIAL PRIMARY KEY"
 	case "sqlite3":
-		return "AUTOINCREMENT"
+		return "id INTEGER PRIMARY KEY AUTOINCREMENT"
 	default:
-		return ""
+		return "id INTEGER PRIMARY KEY"
+	}
+}
+
+// indexStatements 返回需要单独创建的索引语句
+func (s *DatabaseStorage) indexStatements() []string {
+	if s.driverType == "mysql" {
+		return nil
+	}
+
+	return []string{
+		`CREATE INDEX IF NOT EXISTS idx_traffic_records_vmid_timestamp ON traffic_records (vmid, timestamp)`,
+		`CREATE INDEX IF NOT EXISTS idx_action_logs_timestamp ON action_logs (timestamp)`,
 	}
 }
 
@@ -130,6 +164,52 @@ func (s *DatabaseStorage) engine() string {
 		return " ENGINE=InnoDB DEFAULT CHARSET=utf8mb4"
 	}
 	return ""
+}
+
+func ensureSQLiteDatabaseDir(dsn string) error {
+	dbPath := sqliteDatabasePath(dsn)
+	if dbPath == "" {
+		return nil
+	}
+
+	dir := filepath.Dir(dbPath)
+	if dir == "." || dir == "" {
+		return nil
+	}
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return fmt.Errorf("创建 SQLite 数据库目录失败: %w", err)
+	}
+
+	return nil
+}
+
+func sqliteDatabasePath(dsn string) string {
+	dsn = strings.TrimSpace(dsn)
+	if dsn == "" || dsn == ":memory:" || strings.HasPrefix(dsn, "file::memory:") {
+		return ""
+	}
+
+	if strings.HasPrefix(dsn, "file:") {
+		pathPart := strings.TrimPrefix(dsn, "file:")
+		if queryIndex := strings.Index(pathPart, "?"); queryIndex >= 0 {
+			query := strings.ToLower(pathPart[queryIndex+1:])
+			if strings.Contains(query, "mode=memory") {
+				return ""
+			}
+			pathPart = pathPart[:queryIndex]
+		}
+		if pathPart == "" || pathPart == ":memory:" {
+			return ""
+		}
+		return pathPart
+	}
+
+	if queryIndex := strings.Index(dsn, "?"); queryIndex >= 0 {
+		dsn = dsn[:queryIndex]
+	}
+
+	return dsn
 }
 
 // SaveTrafficRecord 保存流量记录
