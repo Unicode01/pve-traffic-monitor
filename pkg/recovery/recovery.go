@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"pve-traffic-monitor/pkg/models"
+	periodcalc "pve-traffic-monitor/pkg/period"
 	"pve-traffic-monitor/pkg/pve"
 	"pve-traffic-monitor/pkg/storage"
 	"time"
@@ -27,6 +28,13 @@ func NewManager(pveClient *pve.Client, storage storage.Interface) *Manager {
 
 // RecordVMState 记录虚拟机状态（在执行操作前）
 func (m *Manager) RecordVMState(vmid int, action, period, ruleName string, useCreationTime bool, creationTime time.Time) error {
+	if state, exists := m.stateManager.GetState(vmid); exists &&
+		state.NeedsRecovery &&
+		action == models.ActionRateLimit &&
+		state.ActionTaken == models.ActionRateLimit {
+		return nil
+	}
+
 	// 获取当前虚拟机状态
 	vmInfo, err := m.pveClient.GetVMStatus(vmid)
 	if err != nil {
@@ -35,16 +43,19 @@ func (m *Manager) RecordVMState(vmid int, action, period, ruleName string, useCr
 
 	// 获取当前速率限制（如果有）
 	rateLimit := 0.0
+	networkRates := map[string]float64{}
+	networkLinks := map[string]bool{}
 	config, err := m.pveClient.GetVMConfig(vmid)
 	if err == nil {
-		// 尝试从配置中解析速率限制
-		for key, value := range config {
-			if key == "net0" || key == "net1" { // 检查网络接口
-				if netConfig, ok := value.(string); ok {
-					// 简单解析，实际可能需要更复杂的逻辑
-					_ = netConfig // TODO: 解析速率限制
-				}
+		parsedRates, err := pve.NetworkRateLimitsFromConfig(config)
+		if err == nil {
+			networkRates = parsedRates
+			if parsedRate, err := pve.NetworkRateLimitFromConfig(config); err == nil {
+				rateLimit = parsedRate
 			}
+		}
+		if parsedLinks, err := pve.NetworkLinkDownStatesFromConfig(config); err == nil {
+			networkLinks = parsedLinks
 		}
 	}
 
@@ -55,6 +66,8 @@ func (m *Manager) RecordVMState(vmid int, action, period, ruleName string, useCr
 		VMID:              vmid,
 		OriginalStatus:    vmInfo.Status,
 		OriginalRateLimit: rateLimit,
+		OriginalNetRates:  networkRates,
+		OriginalNetLinks:  networkLinks,
 		ActionTaken:       action,
 		ActionTime:        time.Now(),
 		Period:            period,
@@ -69,6 +82,8 @@ func (m *Manager) RecordVMState(vmid int, action, period, ruleName string, useCr
 	if err := m.storage.SaveVMState(vmid, map[string]interface{}{
 		"original_status":     state.OriginalStatus,
 		"original_rate_limit": state.OriginalRateLimit,
+		"original_net_rates":  state.OriginalNetRates,
+		"original_net_links":  state.OriginalNetLinks,
 		"action_taken":        state.ActionTaken,
 		"action_time":         state.ActionTime,
 		"period":              state.Period,
@@ -103,16 +118,28 @@ func (m *Manager) RecoverVM(vmid int) error {
 
 	case "disconnect":
 		// 恢复网络连接
-		if err := m.pveClient.ConnectNetwork(vmid); err != nil {
+		if len(state.OriginalNetLinks) > 0 {
+			if err := m.pveClient.RestoreNetworkLinkStates(vmid, state.OriginalNetLinks); err != nil {
+				return fmt.Errorf("恢复网络失败: %w", err)
+			}
+		} else if err := m.pveClient.ConnectNetwork(vmid); err != nil {
 			return fmt.Errorf("恢复网络失败: %w", err)
 		}
 
 	case "rate_limit":
 		// 恢复原始速率限制
-		if state.OriginalRateLimit == 0 {
-			m.pveClient.RemoveNetworkRateLimit(vmid)
+		if len(state.OriginalNetRates) > 0 {
+			if err := m.pveClient.RestoreNetworkRateLimits(vmid, state.OriginalNetRates); err != nil {
+				return fmt.Errorf("恢复网络速率限制失败: %w", err)
+			}
+		} else if state.OriginalRateLimit == 0 {
+			if err := m.pveClient.RemoveNetworkRateLimit(vmid); err != nil {
+				return fmt.Errorf("移除网络速率限制失败: %w", err)
+			}
 		} else {
-			m.pveClient.SetNetworkRateLimit(vmid, state.OriginalRateLimit)
+			if err := m.pveClient.SetNetworkRateLimit(vmid, state.OriginalRateLimit); err != nil {
+				return fmt.Errorf("恢复网络速率限制失败: %w", err)
+			}
 		}
 	}
 
@@ -229,51 +256,5 @@ func calculateRecoveryTime(period string, useCreationTime bool, creationTime tim
 
 // calculateNextPeriodStart 计算基于创建时间的下一个周期开始时间
 func calculateNextPeriodStart(period string, creationTime, now time.Time) time.Time {
-	creation := creationTime
-
-	switch period {
-	case "hour":
-		// 计算从创建到现在经过了多少小时，然后加1得到下一个周期
-		hoursSinceCreation := int(now.Sub(creation).Hours())
-		return creation.Add(time.Duration(hoursSinceCreation+1) * time.Hour)
-
-	case "day":
-		// 计算从创建到现在经过了多少天，然后加1得到下一个周期
-		daysSinceCreation := int(now.Sub(creation).Hours() / 24)
-		return creation.AddDate(0, 0, daysSinceCreation+1)
-
-	case "month":
-		// 计算下一个周期（下个月的同一天同一时刻）
-		creationDay := creation.Day()
-		creationHour := creation.Hour()
-		creationMinute := creation.Minute()
-
-		monthsSinceCreation := (now.Year()-creation.Year())*12 + int(now.Month()-creation.Month())
-
-		// 如果当前还没到创建时刻，说明还在当前周期
-		if now.Day() < creationDay || (now.Day() == creationDay && now.Hour() < creationHour) {
-			// 下一个周期就是当前月的创建日期
-			monthsSinceCreation++
-		} else {
-			// 下一个周期是下个月的创建日期
-			monthsSinceCreation++
-		}
-
-		nextPeriod := creation.AddDate(0, monthsSinceCreation, 0)
-
-		// 处理月份天数不同的情况
-		if nextPeriod.Month() != creation.AddDate(0, monthsSinceCreation, 0).Month() {
-			// 如果目标月份没有那么多天，使用该月最后一天
-			nextPeriod = time.Date(nextPeriod.Year(), nextPeriod.Month()+1, 0,
-				creationHour, creationMinute, 0, 0, nextPeriod.Location())
-		} else {
-			nextPeriod = time.Date(nextPeriod.Year(), nextPeriod.Month(), creationDay,
-				creationHour, creationMinute, 0, 0, nextPeriod.Location())
-		}
-
-		return nextPeriod
-
-	default:
-		return now.Add(1 * time.Hour)
-	}
+	return periodcalc.CalculateNextCreationBasedPeriodStart(period, creationTime, now)
 }

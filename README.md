@@ -248,6 +248,7 @@ npm run build    # 构建生产版本
       "enabled": true,                  // 是否启用
       "period": "month",                // 周期: hour/day/month
       "traffic_direction": "both",      // 流量方向: both/upload/download (默认 both)
+      "network_interface": "all",       // 网卡: all/net0/net1... (默认 all)
       "limit_gb": 1000,                 // 流量限制（GB）
       "action": "shutdown",             // 操作: shutdown/rate_limit
       "rate_limit_mb": 10,              // 限速值 MB/s（仅 rate_limit 操作）
@@ -264,12 +265,18 @@ npm run build    # 构建生产版本
 - `upload` / `tx` - 仅上传流量
 - `download` / `rx` - 仅下载流量
 
+**网卡选择说明**:
+- `all` - 所有网卡聚合流量（默认，使用 PVE VM 级 `netin/netout`）
+- `net0` / `net1` - 指定 PVE 配置中的某张网卡；需要 VM 启用并运行 QEMU Guest Agent
+- 指定单网卡时，系统会用 PVE 配置中的 MAC 地址匹配 guest agent 返回的网卡统计
+
 **示例场景**:
 ```json
 {
   "name": "upload_limit",
   "period": "month",
   "traffic_direction": "upload",    // 仅限制上传流量
+  "network_interface": "net0",       // 仅统计/限制 net0
   "limit_gb": 500,
   "action": "rate_limit",
   "rate_limit_mb": 10

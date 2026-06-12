@@ -40,10 +40,15 @@ func NewTrafficCache(ttl time.Duration) *TrafficCache {
 
 // Get 获取缓存的统计数据
 func (c *TrafficCache) Get(vmid int, period string, direction string, periodStart time.Time) (*models.TrafficStats, bool) {
+	return c.GetForInterface(vmid, period, direction, models.NetworkInterfaceAll, periodStart)
+}
+
+// GetForInterface 获取指定网卡缓存的统计数据
+func (c *TrafficCache) GetForInterface(vmid int, period string, direction string, networkInterface string, periodStart time.Time) (*models.TrafficStats, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	key := c.makeKey(vmid, period, direction)
+	key := c.makeKey(vmid, period, direction, networkInterface)
 	cached, exists := c.cache[key]
 	if !exists {
 		return nil, false
@@ -64,10 +69,15 @@ func (c *TrafficCache) Get(vmid int, period string, direction string, periodStar
 
 // Set 设置缓存的统计数据
 func (c *TrafficCache) Set(vmid int, period string, direction string, periodStart time.Time, stats *models.TrafficStats) {
+	c.SetForInterface(vmid, period, direction, models.NetworkInterfaceAll, periodStart, stats)
+}
+
+// SetForInterface 设置指定网卡缓存的统计数据
+func (c *TrafficCache) SetForInterface(vmid int, period string, direction string, networkInterface string, periodStart time.Time, stats *models.TrafficStats) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	key := c.makeKey(vmid, period, direction)
+	key := c.makeKey(vmid, period, direction, networkInterface)
 	c.cache[key] = &CachedStats{
 		Stats:       stats,
 		LastUpdate:  time.Now(),
@@ -116,8 +126,11 @@ func (c *TrafficCache) GetStats() (total, expired int) {
 }
 
 // makeKey 生成缓存键
-func (c *TrafficCache) makeKey(vmid int, period string, direction string) string {
-	return fmt.Sprintf("%d:%s:%s", vmid, period, direction)
+func (c *TrafficCache) makeKey(vmid int, period string, direction string, networkInterface string) string {
+	if networkInterface == "" {
+		networkInterface = models.NetworkInterfaceAll
+	}
+	return fmt.Sprintf("%d:%s:%s:%s", vmid, period, direction, networkInterface)
 }
 
 // cleanupLoop 定期清理过期缓存

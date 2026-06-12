@@ -4,15 +4,17 @@ import "time"
 
 // VMState 虚拟机状态记录
 type VMState struct {
-	VMID              int       `json:"vmid"`
-	OriginalStatus    string    `json:"original_status"`     // 原始运行状态 (running/stopped)
-	OriginalRateLimit float64   `json:"original_rate_limit"` // 原始速率限制 MB/s (0表示无限制)
-	ActionTaken       string    `json:"action_taken"`        // 执行的操作 (shutdown/rate_limit)
-	ActionTime        time.Time `json:"action_time"`         // 操作执行时间
-	Period            string    `json:"period"`              // 记录周期 (hour/day/month)
-	RuleName          string    `json:"rule_name"`           // 触发的规则名称
-	NeedsRecovery     bool      `json:"needs_recovery"`      // 是否需要恢复
-	RecoveryTime      time.Time `json:"recovery_time"`       // 计划恢复时间
+	VMID              int                `json:"vmid"`
+	OriginalStatus    string             `json:"original_status"`              // 原始运行状态 (running/stopped)
+	OriginalRateLimit float64            `json:"original_rate_limit"`          // 原始速率限制 MB/s (0表示无限制)
+	OriginalNetRates  map[string]float64 `json:"original_net_rates,omitempty"` // 每张网卡的原始速率限制
+	OriginalNetLinks  map[string]bool    `json:"original_net_links,omitempty"` // 每张网卡原始 link_down 状态
+	ActionTaken       string             `json:"action_taken"`                 // 执行的操作 (shutdown/rate_limit)
+	ActionTime        time.Time          `json:"action_time"`                  // 操作执行时间
+	Period            string             `json:"period"`                       // 记录周期 (hour/day/month)
+	RuleName          string             `json:"rule_name"`                    // 触发的规则名称
+	NeedsRecovery     bool               `json:"needs_recovery"`               // 是否需要恢复
+	RecoveryTime      time.Time          `json:"recovery_time"`                // 计划恢复时间
 }
 
 // VMStateManager 虚拟机状态管理器

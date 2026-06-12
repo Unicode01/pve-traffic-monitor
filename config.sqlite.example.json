@@ -32,6 +32,7 @@
             "period": "month",
             "use_creation_time": true,
             "traffic_direction": "both",
+            "network_interface": "all",
             "limit_gb": 1000,
             "action": "disconnect",
             "vm_ids": [],

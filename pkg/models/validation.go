@@ -164,6 +164,11 @@ func (r *Rule) Validate() error {
 		}
 	}
 
+	// 验证网卡选择
+	if r.NetworkInterface != "" && !IsValidNetworkInterfaceSelector(r.NetworkInterface) {
+		return fmt.Errorf("不支持的网卡选择: %s (支持: all 或 net0/net1/...)", r.NetworkInterface)
+	}
+
 	// 验证限制值
 	if r.LimitGB <= 0 {
 		return fmt.Errorf("limit_gb必须大于0，当前值: %.2f", r.LimitGB)
@@ -192,4 +197,21 @@ func (r *Rule) Validate() error {
 	}
 
 	return nil
+}
+
+// IsValidNetworkInterfaceSelector 验证网卡选择器，all 表示所有网卡，netN 表示 PVE 配置中的某张网卡。
+func IsValidNetworkInterfaceSelector(selector string) bool {
+	selector = strings.ToLower(strings.TrimSpace(selector))
+	if selector == "" || selector == NetworkInterfaceAll {
+		return true
+	}
+	if !strings.HasPrefix(selector, "net") || len(selector) == len("net") {
+		return false
+	}
+	for _, r := range selector[len("net"):] {
+		if r < '0' || r > '9' {
+			return false
+		}
+	}
+	return true
 }
