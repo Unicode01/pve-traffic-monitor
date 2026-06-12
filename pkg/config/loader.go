@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"pve-traffic-monitor/pkg/models"
+	"strings"
 	"sync"
 	"time"
 )
@@ -149,7 +150,7 @@ func (l *Loader) validateConfig(config *models.Config) error {
 		config.Storage.Type = "file" // 默认使用文件存储
 	}
 
-	storageType := config.Storage.Type
+	storageType := strings.ToLower(config.Storage.Type)
 	switch storageType {
 	case "file":
 		if config.Storage.FilePath == "" {

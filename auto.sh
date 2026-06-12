@@ -88,29 +88,30 @@ get_status() {
 
 # 检查依赖工具
 check_dependencies() {
-    local missing_deps=()
+    local missing_deps=""
     
     # 检查 Go
     if ! command -v go &> /dev/null; then
-        missing_deps+=("go")
+        missing_deps="${missing_deps} go"
     fi
     
     # 检查前端构建工具（如果有 web 目录）
     if [ -d "web" ]; then
         if ! command -v node &> /dev/null; then
-            missing_deps+=("node")
+            missing_deps="${missing_deps} node"
         fi
         if ! command -v npm &> /dev/null; then
-            missing_deps+=("npm")
+            missing_deps="${missing_deps} npm"
         fi
     fi
     
     # 如果有缺失的依赖，报错退出
-    if [ ${#missing_deps[@]} -gt 0 ]; then
-        print_error "缺少以下依赖工具: ${missing_deps[*]}"
+    if [ -n "$missing_deps" ]; then
+        missing_deps="${missing_deps# }"
+        print_error "缺少以下依赖工具: ${missing_deps}"
         echo ""
         print_info "安装建议："
-        for dep in "${missing_deps[@]}"; do
+        for dep in $missing_deps; do
             case $dep in
                 go)
                     echo "  - Go: https://golang.org/dl/ 或使用系统包管理器安装"

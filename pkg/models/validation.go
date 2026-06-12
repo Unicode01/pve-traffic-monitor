@@ -3,6 +3,7 @@ package models
 import (
 	"errors"
 	"fmt"
+	"strings"
 )
 
 // Validate 验证配置的有效性
@@ -89,24 +90,27 @@ func (s *StorageConfig) Validate() error {
 		return errors.New("type不能为空")
 	}
 
+	storageType := strings.ToLower(s.Type)
 	validTypes := map[string]bool{
 		"file":       true,
 		"mysql":      true,
+		"postgres":   true,
 		"postgresql": true,
 		"sqlite":     true,
+		"sqlite3":    true,
 	}
 
-	if !validTypes[s.Type] {
+	if !validTypes[storageType] {
 		return fmt.Errorf("不支持的存储类型: %s (支持: file, mysql, postgresql, sqlite)", s.Type)
 	}
 
 	// 验证文件存储配置
-	if s.Type == "file" && s.FilePath == "" {
+	if storageType == "file" && s.FilePath == "" {
 		return errors.New("文件存储需要指定file_path")
 	}
 
 	// 验证数据库存储配置
-	if s.Type != "file" && s.DSN == "" {
+	if storageType != "file" && s.DSN == "" {
 		return fmt.Errorf("%s存储需要指定dsn", s.Type)
 	}
 
@@ -179,7 +183,7 @@ func (r *Rule) Validate() error {
 
 	// 验证限速值
 	if r.Action == ActionRateLimit && r.RateLimitMB <= 0 {
-		return fmt.Errorf("rate_limit操作需要指定rate_limit_mb且必��大于0，当前值: %.2f", r.RateLimitMB)
+		return fmt.Errorf("rate_limit操作需要指定rate_limit_mb且必须大于0，当前值: %.2f", r.RateLimitMB)
 	}
 
 	// 至少要有一个匹配条件

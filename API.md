@@ -222,7 +222,7 @@ GET /api/history/{vmid}?start={start}&end={end}&granularity={granularity}
 
 *自定义时间范围模式:*
 - `start`: 开始时间（RFC3339 格式）
-- `end`: 结束时间（RFC3339 ��式）
+- `end`: 结束时间（RFC3339 格式）
 - `granularity`: 数据粒度（minute/hour/day/month），默认 hour
 
 **响应**:

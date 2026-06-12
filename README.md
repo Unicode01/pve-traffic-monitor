@@ -24,6 +24,7 @@
 ```bash
 git clone https://github.com/Unicode01/pve-traffic-monitor
 cd pve-traffic-monitor
+chmod +x auto.sh
 ./auto.sh build
 ```
 
