@@ -149,8 +149,8 @@ curl http://localhost:8080/api/vm/100
 
 **请求**:
 ```
-GET /api/stats?period={period}&network_interface={all|net0}
-GET /api/stats?start={start}&end={end}&granularity={granularity}&network_interface={all|net0}
+GET /api/stats?period={period}&network_interface={all|net0|vmbr0}
+GET /api/stats?start={start}&end={end}&granularity={granularity}&network_interface={all|net0|vmbr0}
 ```
 
 **参数**:
@@ -158,14 +158,14 @@ GET /api/stats?start={start}&end={end}&granularity={granularity}&network_interfa
 *预设周期模式:*
 - `period`: 统计周期（minute/hour/day/month），默认 day
 - `direction`: 流量方向（both/rx/tx），默认 both
-- `network_interface`: 网卡选择（all/net0/net1...），默认 all
+- `network_interface`: 计费接口（all/net0/net1/vmbr0...），默认 all
 
 *自定义时间范围模式:*
 - `start`: 开始时间（RFC3339 格式，如 2024-01-20T00:00:00Z）
 - `end`: 结束时间（RFC3339 格式）
 - `granularity`: 数据粒度（minute/hour/day/month），默认 hour
 - `direction`: 流量方向（both/rx/tx），默认 both
-- `network_interface`: 网卡选择（all/net0/net1...），默认 all
+- `network_interface`: 计费接口（all/net0/net1/vmbr0...），默认 all
 
 **响应**:
 ```json
@@ -201,8 +201,8 @@ curl "http://localhost:8080/api/stats?start=2024-01-17T00:00:00Z&end=2024-01-24T
 # 获取自定义时间范围（最近24小时，按小时聚合，仅下载流量）
 curl "http://localhost:8080/api/stats?start=2024-01-23T12:00:00Z&end=2024-01-24T12:00:00Z&granularity=hour&direction=rx"
 
-# 获取 net0 的日统计（需要 VM 启用 QEMU Guest Agent）
-curl "http://localhost:8080/api/stats?period=day&network_interface=net0"
+# 获取接入 vmbr0 的 VM 网卡日统计（需要 VM 启用 QEMU Guest Agent）
+curl "http://localhost:8080/api/stats?period=day&network_interface=vmbr0"
 ```
 
 ---
@@ -211,8 +211,8 @@ curl "http://localhost:8080/api/stats?period=day&network_interface=net0"
 
 **请求**:
 ```
-GET /api/history/{vmid}?period={period}&network_interface={all|net0}
-GET /api/history/{vmid}?start={start}&end={end}&granularity={granularity}&network_interface={all|net0}
+GET /api/history/{vmid}?period={period}&network_interface={all|net0|vmbr0}
+GET /api/history/{vmid}?start={start}&end={end}&granularity={granularity}&network_interface={all|net0|vmbr0}
 ```
 
 **参数**:
@@ -224,13 +224,13 @@ GET /api/history/{vmid}?start={start}&end={end}&granularity={granularity}&networ
   - `hour`: 最近24小时，按小时聚合
   - `day`: 最近30天，按天聚合
   - `month`: 最近12个月，按月聚合
-- `network_interface`: 网卡选择（all/net0/net1...），默认 all
+- `network_interface`: 计费接口（all/net0/net1/vmbr0...），默认 all
 
 *自定义时间范围模式:*
 - `start`: 开始时间（RFC3339 格式）
 - `end`: 结束时间（RFC3339 格式）
 - `granularity`: 数据粒度（minute/hour/day/month），默认 hour
-- `network_interface`: 网卡选择（all/net0/net1...），默认 all
+- `network_interface`: 计费接口（all/net0/net1/vmbr0...），默认 all
 
 **响应**:
 ```json
@@ -261,8 +261,8 @@ curl http://localhost:8080/api/history/100?period=day
 # 获取自定义时间范围（指定日期，按小时聚合）
 curl "http://localhost:8080/api/history/100?start=2024-01-20T00:00:00Z&end=2024-01-24T23:59:59Z&granularity=hour"
 
-# 获取 net0 最近24小时数据（需要 VM 启用 QEMU Guest Agent）
-curl "http://localhost:8080/api/history/100?period=hour&network_interface=net0"
+# 获取接入 vmbr0 的 VM 网卡最近24小时数据（需要 VM 启用 QEMU Guest Agent）
+curl "http://localhost:8080/api/history/100?period=hour&network_interface=vmbr0"
 ```
 
 ---

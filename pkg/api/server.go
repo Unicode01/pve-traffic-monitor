@@ -1093,7 +1093,7 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 		networkInterface = models.NetworkInterfaceAll
 	}
 	if !models.IsValidNetworkInterfaceSelector(networkInterface) {
-		s.sendError(w, "Invalid network_interface, use all or net0/net1/...", http.StatusBadRequest)
+		s.sendError(w, "Invalid network_interface, use all, net0/net1, or bridge name like vmbr0", http.StatusBadRequest)
 		return
 	}
 
@@ -1238,7 +1238,7 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 		networkInterface = models.NetworkInterfaceAll
 	}
 	if !models.IsValidNetworkInterfaceSelector(networkInterface) {
-		s.sendError(w, "Invalid network_interface, use all or net0/net1/...", http.StatusBadRequest)
+		s.sendError(w, "Invalid network_interface, use all, net0/net1, or bridge name like vmbr0", http.StatusBadRequest)
 		return
 	}
 

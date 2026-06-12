@@ -312,6 +312,21 @@ func (c *Client) GetVMNetworkInterfaceMACs(vmid int) (map[string]string, error) 
 	return result, nil
 }
 
+// ResolveNetworkInterfaceSelector 将 all/netN/bridge 名称解析为 PVE 配置中的 netN 列表。
+func (c *Client) ResolveNetworkInterfaceSelector(vmid int, networkInterface string) ([]string, error) {
+	config, err := c.GetVMConfig(vmid)
+	if err != nil {
+		return nil, err
+	}
+
+	keys := selectedNetworkConfigKeys(config, networkInterface)
+	if len(keys) == 0 {
+		return nil, fmt.Errorf("未找到网络接口配置: %s", networkInterface)
+	}
+
+	return keys, nil
+}
+
 // ShutdownVM 关闭虚拟机（优雅关机，需要虚拟机支持 ACPI）
 func (c *Client) ShutdownVM(vmid int) error {
 	// 使用原生 HTTP 客户端避免 chunked encoding
@@ -881,7 +896,18 @@ func selectedNetworkConfigKeys(config map[string]interface{}, networkInterface s
 		return []string{networkInterface}
 	}
 
-	return nil
+	var keys []string
+	for _, key := range networkConfigKeys(config) {
+		netConfig, ok := config[key].(string)
+		if !ok {
+			continue
+		}
+		if strings.EqualFold(parseNetworkBridge(netConfig), networkInterface) {
+			keys = append(keys, key)
+		}
+	}
+
+	return keys
 }
 
 func setNetworkRateLimitInConfig(netConfig string, rateMB float64, enabled bool) string {
@@ -956,6 +982,20 @@ func parseNetworkConfigMAC(netConfig string) string {
 		mac := normalizeMAC(pieces[1])
 		if isMACAddress(mac) {
 			return mac
+		}
+	}
+
+	return ""
+}
+
+func parseNetworkBridge(netConfig string) string {
+	for _, part := range strings.Split(netConfig, ",") {
+		pieces := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(pieces) != 2 {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(pieces[0]), "bridge") {
+			return strings.TrimSpace(pieces[1])
 		}
 	}
 
