@@ -58,3 +58,19 @@ func (c *Client) doPost(path string, data map[string]string) ([]byte, error) {
 
 	return body, nil
 }
+
+func (c *Client) putVMConfig(vmid int, data map[string]string) error {
+	resp, err := c.client.R().
+		SetFormData(data).
+		Put(fmt.Sprintf("/nodes/%s/qemu/%d/config", c.config.Node, vmid))
+
+	if err != nil {
+		return fmt.Errorf("发送请求失败: %w", err)
+	}
+
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("HTTP %d, 响应: %s", resp.StatusCode(), string(resp.Body()))
+	}
+
+	return nil
+}

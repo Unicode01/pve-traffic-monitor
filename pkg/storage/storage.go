@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"pve-traffic-monitor/pkg/models"
+	periodcalc "pve-traffic-monitor/pkg/period"
 	"pve-traffic-monitor/pkg/utils"
 	"sort"
 	"strconv"
@@ -274,6 +275,7 @@ func (c *RecordCounter) save() error {
 
 // SaveTrafficRecord 保存流量记录（优化版：追加模式 + 计数器更新）
 func (s *FileStorage) SaveTrafficRecord(record models.TrafficRecord) error {
+	record.NetworkInterface = normalizeNetworkInterface(record.NetworkInterface)
 	vmDir := filepath.Join(s.basePath, fmt.Sprintf("vm_%d", record.VMID))
 	if err := os.MkdirAll(vmDir, 0755); err != nil {
 		return fmt.Errorf("创建虚拟机目录失败: %w", err)
@@ -318,6 +320,12 @@ func (s *FileStorage) SaveTrafficRecord(record models.TrafficRecord) error {
 
 // GetTrafficRecords 获取流量记录（优化版：支持JSONL格式）
 func (s *FileStorage) GetTrafficRecords(vmid int, startTime, endTime time.Time) ([]models.TrafficRecord, error) {
+	return s.GetTrafficRecordsForInterface(vmid, models.NetworkInterfaceAll, startTime, endTime)
+}
+
+// GetTrafficRecordsForInterface 获取指定网卡的流量记录（优化版：支持JSONL格式）
+func (s *FileStorage) GetTrafficRecordsForInterface(vmid int, networkInterface string, startTime, endTime time.Time) ([]models.TrafficRecord, error) {
+	networkInterface = normalizeNetworkInterface(networkInterface)
 	vmDir := filepath.Join(s.basePath, fmt.Sprintf("vm_%d", vmid))
 	if _, err := os.Stat(vmDir); os.IsNotExist(err) {
 		return []models.TrafficRecord{}, nil
@@ -332,12 +340,12 @@ func (s *FileStorage) GetTrafficRecords(vmid int, startTime, endTime time.Time) 
 
 		// 尝试读取JSONL格式（新格式）
 		jsonlFile := filepath.Join(vmDir, fmt.Sprintf("traffic_%s.jsonl", dateStr))
-		if records, err := s.readJSONLFile(jsonlFile, startTime, endTime); err == nil {
+		if records, err := s.readJSONLFile(jsonlFile, networkInterface, startTime, endTime); err == nil {
 			allRecords = append(allRecords, records...)
 		} else {
 			// 兼容旧的JSON格式
 			jsonFile := filepath.Join(vmDir, fmt.Sprintf("traffic_%s.json", dateStr))
-			if records, err := s.readJSONFile(jsonFile, startTime, endTime); err == nil {
+			if records, err := s.readJSONFile(jsonFile, networkInterface, startTime, endTime); err == nil {
 				allRecords = append(allRecords, records...)
 			}
 		}
@@ -355,7 +363,7 @@ func (s *FileStorage) GetTrafficRecords(vmid int, startTime, endTime time.Time) 
 }
 
 // readJSONLFile 读取JSONL格式文件（每行一个JSON对象）
-func (s *FileStorage) readJSONLFile(filename string, startTime, endTime time.Time) ([]models.TrafficRecord, error) {
+func (s *FileStorage) readJSONLFile(filename string, networkInterface string, startTime, endTime time.Time) ([]models.TrafficRecord, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -372,7 +380,9 @@ func (s *FileStorage) readJSONLFile(filename string, startTime, endTime time.Tim
 
 		var record models.TrafficRecord
 		if err := json.Unmarshal([]byte(line), &record); err == nil {
-			if (record.Timestamp.After(startTime) || record.Timestamp.Equal(startTime)) &&
+			record.NetworkInterface = normalizeNetworkInterface(record.NetworkInterface)
+			if record.NetworkInterface == networkInterface &&
+				(record.Timestamp.After(startTime) || record.Timestamp.Equal(startTime)) &&
 				(record.Timestamp.Before(endTime) || record.Timestamp.Equal(endTime)) {
 				records = append(records, record)
 			}
@@ -383,7 +393,7 @@ func (s *FileStorage) readJSONLFile(filename string, startTime, endTime time.Tim
 }
 
 // readJSONFile 读取JSON格式文件（兼容旧格式）
-func (s *FileStorage) readJSONFile(filename string, startTime, endTime time.Time) ([]models.TrafficRecord, error) {
+func (s *FileStorage) readJSONFile(filename string, networkInterface string, startTime, endTime time.Time) ([]models.TrafficRecord, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, err
@@ -396,7 +406,9 @@ func (s *FileStorage) readJSONFile(filename string, startTime, endTime time.Time
 
 	var records []models.TrafficRecord
 	for _, record := range allRecords {
-		if (record.Timestamp.After(startTime) || record.Timestamp.Equal(startTime)) &&
+		record.NetworkInterface = normalizeNetworkInterface(record.NetworkInterface)
+		if record.NetworkInterface == networkInterface &&
+			(record.Timestamp.After(startTime) || record.Timestamp.Equal(startTime)) &&
 			(record.Timestamp.Before(endTime) || record.Timestamp.Equal(endTime)) {
 			records = append(records, record)
 		}
@@ -417,6 +429,11 @@ func (s *FileStorage) CalculateTrafficStatsWithTime(vmid int, period string, cre
 
 // CalculateTrafficStatsWithDirection 使用指定方向和时间计算流量统计
 func (s *FileStorage) CalculateTrafficStatsWithDirection(vmid int, period string, creationTime time.Time, useCreationTime bool, direction string) (*models.TrafficStats, error) {
+	return s.CalculateTrafficStatsWithDirectionAndInterface(vmid, period, creationTime, useCreationTime, direction, models.NetworkInterfaceAll)
+}
+
+// CalculateTrafficStatsWithDirectionAndInterface 使用指定方向、时间和网卡计算流量统计
+func (s *FileStorage) CalculateTrafficStatsWithDirectionAndInterface(vmid int, period string, creationTime time.Time, useCreationTime bool, direction string, networkInterface string) (*models.TrafficStats, error) {
 	now := time.Now()
 	var startTime time.Time
 
@@ -441,7 +458,7 @@ func (s *FileStorage) CalculateTrafficStatsWithDirection(vmid int, period string
 		}
 	}
 
-	records, err := s.GetTrafficRecords(vmid, startTime, now)
+	records, err := s.GetTrafficRecordsForInterface(vmid, networkInterface, startTime, now)
 	if err != nil {
 		return nil, err
 	}
@@ -452,7 +469,12 @@ func (s *FileStorage) CalculateTrafficStatsWithDirection(vmid int, period string
 
 // CalculateTrafficStatsWithTimeRange 使用自定义时间范围计算流量统计
 func (s *FileStorage) CalculateTrafficStatsWithTimeRange(vmid int, startTime, endTime time.Time, direction string) (*models.TrafficStats, error) {
-	records, err := s.GetTrafficRecords(vmid, startTime, endTime)
+	return s.CalculateTrafficStatsWithTimeRangeAndInterface(vmid, models.NetworkInterfaceAll, startTime, endTime, direction)
+}
+
+// CalculateTrafficStatsWithTimeRangeAndInterface 使用自定义时间范围和网卡计算流量统计
+func (s *FileStorage) CalculateTrafficStatsWithTimeRangeAndInterface(vmid int, networkInterface string, startTime, endTime time.Time, direction string) (*models.TrafficStats, error) {
+	records, err := s.GetTrafficRecordsForInterface(vmid, networkInterface, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}
@@ -636,34 +658,7 @@ func (s *FileStorage) CleanupOldData(retentionDays int) error {
 
 // calculatePeriodStart 基于创建时间计算周期开始时间
 func (s *FileStorage) calculatePeriodStart(period string, creationTime, now time.Time) time.Time {
-	creation := creationTime
-
-	switch period {
-	case "hour":
-		hoursSinceCreation := int(now.Sub(creation).Hours())
-		return creation.Add(time.Duration(hoursSinceCreation) * time.Hour)
-
-	case "day":
-		daysSinceCreation := int(now.Sub(creation).Hours() / 24)
-		return creation.AddDate(0, 0, daysSinceCreation)
-
-	case "month":
-		creationDay := creation.Day()
-		creationHour := creation.Hour()
-
-		monthsSinceCreation := (now.Year()-creation.Year())*12 + int(now.Month()-creation.Month())
-
-		if now.Day() < creationDay || (now.Day() == creationDay && now.Hour() < creationHour) {
-			monthsSinceCreation--
-		}
-
-		periodStart := creation.AddDate(0, monthsSinceCreation, 0)
-		return time.Date(periodStart.Year(), periodStart.Month(), creationDay,
-			creationHour, 0, 0, 0, periodStart.Location())
-
-	default:
-		return time.Date(now.Year(), now.Month(), now.Day(), now.Hour(), 0, 0, 0, now.Location())
-	}
+	return periodcalc.CalculateCreationBasedPeriodStart(period, creationTime, now)
 }
 
 // DeleteRecordsInRange 删除指定时间范围内的记录

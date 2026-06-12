@@ -47,6 +47,10 @@ func (c *Calculator) GetCurrentPeriodStart() time.Time {
 func (c *Calculator) GetNextPeriodStart() time.Time {
 	currentStart := c.GetCurrentPeriodStart()
 
+	if c.useCreationTime && !c.creationTime.IsZero() {
+		return CalculateNextCreationBasedPeriodStart(string(c.periodType), c.creationTime, time.Now())
+	}
+
 	switch c.periodType {
 	case PeriodHour:
 		return currentStart.Add(1 * time.Hour)
@@ -82,9 +86,16 @@ func (c *Calculator) getFixedPeriodStart(now time.Time) time.Time {
 
 // getCreationBasedPeriodStart 基于创建时间计算周期开始时间
 func (c *Calculator) getCreationBasedPeriodStart(now time.Time) time.Time {
-	creation := c.creationTime
+	return CalculateCreationBasedPeriodStart(string(c.periodType), c.creationTime, now)
+}
 
-	switch c.periodType {
+// CalculateCreationBasedPeriodStart 基于创建时间计算当前周期开始时间。
+func CalculateCreationBasedPeriodStart(periodType string, creation, now time.Time) time.Time {
+	if creation.IsZero() {
+		return now
+	}
+
+	switch PeriodType(periodType) {
 	case PeriodHour:
 		// 从创建时间开始，每小时一个周期
 		hoursSinceCreation := int(now.Sub(creation).Hours())
@@ -99,34 +110,69 @@ func (c *Calculator) getCreationBasedPeriodStart(now time.Time) time.Time {
 	case PeriodMonth:
 		// 从创建时间开始，每月一个周期
 		// 例如：创建于 1月15日，则每月15日为周期开始
-		creationDay := creation.Day()
-		creationHour := creation.Hour()
-		creationMinute := creation.Minute()
-
 		// 计算从创建到现在经过了多少个月
-		monthsSinceCreation := (now.Year()-creation.Year())*12 + int(now.Month()-creation.Month())
-
-		// 如果当前日期还没到创建日期，说明还在上个周期
-		if now.Day() < creationDay || (now.Day() == creationDay && now.Hour() < creationHour) {
-			monthsSinceCreation--
-		}
-
-		// 计算当前周期开始时间
-		periodStart := creation.AddDate(0, monthsSinceCreation, 0)
-
-		// 处理月份天数不同的情况（如31号创建，但当前月只有30天）
-		if periodStart.Month() != creation.AddDate(0, monthsSinceCreation, 0).Month() {
-			// 如果目标月份没有那么多天，使用该月最后一天
-			periodStart = time.Date(periodStart.Year(), periodStart.Month()+1, 0,
-				creationHour, creationMinute, 0, 0, periodStart.Location())
-		}
-
-		return time.Date(periodStart.Year(), periodStart.Month(), creationDay,
-			creationHour, creationMinute, 0, 0, periodStart.Location())
+		return monthPeriodStart(creation, monthPeriodIndex(creation, now))
 
 	default:
-		return c.getFixedPeriodStart(now)
+		return now
 	}
+}
+
+// CalculateNextCreationBasedPeriodStart 基于创建时间计算下一个周期开始时间。
+func CalculateNextCreationBasedPeriodStart(periodType string, creation, now time.Time) time.Time {
+	if creation.IsZero() {
+		return now
+	}
+
+	currentStart := CalculateCreationBasedPeriodStart(periodType, creation, now)
+	switch PeriodType(periodType) {
+	case PeriodHour:
+		return currentStart.Add(1 * time.Hour)
+	case PeriodDay:
+		return currentStart.AddDate(0, 0, 1)
+	case PeriodMonth:
+		return monthPeriodStart(creation, monthPeriodIndex(creation, now)+1)
+	default:
+		return now
+	}
+}
+
+func monthPeriodIndex(creation, now time.Time) int {
+	monthsSinceCreation := (now.Year()-creation.Year())*12 + int(now.Month()-creation.Month())
+	candidate := monthPeriodStart(creation, monthsSinceCreation)
+	if now.Before(candidate) {
+		monthsSinceCreation--
+	}
+	return monthsSinceCreation
+}
+
+func monthPeriodStart(creation time.Time, monthsSinceCreation int) time.Time {
+	year, month := addMonths(creation.Year(), creation.Month(), monthsSinceCreation)
+	day := minInt(creation.Day(), daysInMonth(year, month))
+	return time.Date(year, month, day,
+		creation.Hour(), creation.Minute(), 0, 0, creation.Location())
+}
+
+func addMonths(year int, month time.Month, delta int) (int, time.Month) {
+	monthIndex := int(month) - 1 + delta
+	year += monthIndex / 12
+	monthIndex = monthIndex % 12
+	if monthIndex < 0 {
+		monthIndex += 12
+		year--
+	}
+	return year, time.Month(monthIndex + 1)
+}
+
+func daysInMonth(year int, month time.Month) int {
+	return time.Date(year, month+1, 0, 0, 0, 0, 0, time.Local).Day()
+}
+
+func minInt(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
 }
 
 // FormatPeriod 格式化周期描述

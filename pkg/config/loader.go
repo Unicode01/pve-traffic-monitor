@@ -204,6 +204,11 @@ func (l *Loader) validateConfig(config *models.Config) error {
 				return fmt.Errorf("规则 %s 流量方向无效: %s (支持: both, upload, download)", rule.Name, rule.TrafficDirection)
 			}
 		}
+
+		// 验证网卡选择
+		if rule.NetworkInterface != "" && !models.IsValidNetworkInterfaceSelector(rule.NetworkInterface) {
+			return fmt.Errorf("规则 %s 网卡选择无效: %s (支持: all 或 net0/net1/...)", rule.Name, rule.NetworkInterface)
+		}
 	}
 
 	return nil

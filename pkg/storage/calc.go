@@ -4,8 +4,17 @@ import (
 	"pve-traffic-monitor/pkg/models"
 	"pve-traffic-monitor/pkg/utils"
 	"sort"
+	"strings"
 	"time"
 )
+
+func normalizeNetworkInterface(networkInterface string) string {
+	networkInterface = strings.ToLower(strings.TrimSpace(networkInterface))
+	if networkInterface == "" {
+		return models.NetworkInterfaceAll
+	}
+	return networkInterface
+}
 
 // buildTrafficStats 构建流量统计结果（公共辅助函数，避免代码重复）
 func buildTrafficStats(vmid int, period string, startTime, endTime time.Time, direction string, records []models.TrafficRecord) *models.TrafficStats {

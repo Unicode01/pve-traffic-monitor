@@ -30,6 +30,9 @@ const (
 	DirectionDownload = "download"
 	DirectionRX       = "rx"
 
+	// 网卡选择
+	NetworkInterfaceAll = "all"
+
 	// 周期类型
 	PeriodMinute = "minute"
 	PeriodHour   = "hour"
