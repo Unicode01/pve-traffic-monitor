@@ -391,6 +391,7 @@ func (m *Monitor) processVM(vm models.VMInfo) error {
 	if err := m.storage.SaveTrafficRecord(record); err != nil {
 		return fmt.Errorf("保存流量记录失败: %w", err)
 	}
+	m.trafficCache.Invalidate(vm.VMID)
 
 	// 检查并应用规则
 	// 只有匹配规则的虚拟机才会被打标签
