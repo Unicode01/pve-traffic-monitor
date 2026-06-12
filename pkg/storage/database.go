@@ -234,11 +234,10 @@ func sqliteDatabasePath(dsn string) string {
 
 // SaveTrafficRecord 保存流量记录
 func (s *DatabaseStorage) SaveTrafficRecord(record models.TrafficRecord) error {
-	record.NetworkInterface = normalizeNetworkInterface(record.NetworkInterface)
 	query := s.buildQuery(`INSERT INTO traffic_records (vmid, network_interface, timestamp, rx_bytes, tx_bytes, total_bytes)
 			  VALUES (?, ?, ?, ?, ?, ?)`, 6)
 
-	_, err := s.db.Exec(query, record.VMID, record.NetworkInterface, record.Timestamp, record.RXBytes, record.TXBytes, record.TotalBytes)
+	_, err := s.db.Exec(query, record.VMID, defaultTrafficRecordInterface, record.Timestamp, record.RXBytes, record.TXBytes, record.TotalBytes)
 	if err != nil {
 		return fmt.Errorf("保存流量记录失败: %w", err)
 	}
@@ -248,18 +247,12 @@ func (s *DatabaseStorage) SaveTrafficRecord(record models.TrafficRecord) error {
 
 // GetTrafficRecords 获取流量记录
 func (s *DatabaseStorage) GetTrafficRecords(vmid int, startTime, endTime time.Time) ([]models.TrafficRecord, error) {
-	return s.GetTrafficRecordsForInterface(vmid, models.NetworkInterfaceAll, startTime, endTime)
-}
-
-// GetTrafficRecordsForInterface 获取指定网卡的流量记录
-func (s *DatabaseStorage) GetTrafficRecordsForInterface(vmid int, networkInterface string, startTime, endTime time.Time) ([]models.TrafficRecord, error) {
-	networkInterface = normalizeNetworkInterface(networkInterface)
-	query := s.buildQuery(`SELECT vmid, network_interface, timestamp, rx_bytes, tx_bytes, total_bytes
+	query := s.buildQuery(`SELECT vmid, timestamp, rx_bytes, tx_bytes, total_bytes
 			  FROM traffic_records 
 			  WHERE vmid = ? AND network_interface = ? AND timestamp >= ? AND timestamp <= ?
 			  ORDER BY timestamp ASC`, 4)
 
-	rows, err := s.db.Query(query, vmid, networkInterface, startTime, endTime)
+	rows, err := s.db.Query(query, vmid, defaultTrafficRecordInterface, startTime, endTime)
 	if err != nil {
 		return nil, fmt.Errorf("查询流量记录失败: %w", err)
 	}
@@ -268,10 +261,9 @@ func (s *DatabaseStorage) GetTrafficRecordsForInterface(vmid int, networkInterfa
 	var records []models.TrafficRecord
 	for rows.Next() {
 		var record models.TrafficRecord
-		if err := rows.Scan(&record.VMID, &record.NetworkInterface, &record.Timestamp, &record.RXBytes, &record.TXBytes, &record.TotalBytes); err != nil {
+		if err := rows.Scan(&record.VMID, &record.Timestamp, &record.RXBytes, &record.TXBytes, &record.TotalBytes); err != nil {
 			return nil, fmt.Errorf("扫描流量记录失败: %w", err)
 		}
-		record.NetworkInterface = normalizeNetworkInterface(record.NetworkInterface)
 		records = append(records, record)
 	}
 
@@ -294,11 +286,6 @@ func (s *DatabaseStorage) CalculateTrafficStatsWithTime(vmid int, period string,
 
 // CalculateTrafficStatsWithDirection 使用指定方向和时间计算流量统计
 func (s *DatabaseStorage) CalculateTrafficStatsWithDirection(vmid int, period string, creationTime time.Time, useCreationTime bool, direction string) (*models.TrafficStats, error) {
-	return s.CalculateTrafficStatsWithDirectionAndInterface(vmid, period, creationTime, useCreationTime, direction, models.NetworkInterfaceAll)
-}
-
-// CalculateTrafficStatsWithDirectionAndInterface 使用指定方向、时间和网卡计算流量统计
-func (s *DatabaseStorage) CalculateTrafficStatsWithDirectionAndInterface(vmid int, period string, creationTime time.Time, useCreationTime bool, direction string, networkInterface string) (*models.TrafficStats, error) {
 	now := time.Now()
 	var startTime time.Time
 
@@ -322,7 +309,7 @@ func (s *DatabaseStorage) CalculateTrafficStatsWithDirectionAndInterface(vmid in
 		}
 	}
 
-	records, err := s.GetTrafficRecordsForInterface(vmid, networkInterface, startTime, now)
+	records, err := s.GetTrafficRecords(vmid, startTime, now)
 	if err != nil {
 		return nil, err
 	}
@@ -333,12 +320,7 @@ func (s *DatabaseStorage) CalculateTrafficStatsWithDirectionAndInterface(vmid in
 
 // CalculateTrafficStatsWithTimeRange 使用自定义时间范围计算流量统计
 func (s *DatabaseStorage) CalculateTrafficStatsWithTimeRange(vmid int, startTime, endTime time.Time, direction string) (*models.TrafficStats, error) {
-	return s.CalculateTrafficStatsWithTimeRangeAndInterface(vmid, models.NetworkInterfaceAll, startTime, endTime, direction)
-}
-
-// CalculateTrafficStatsWithTimeRangeAndInterface 使用自定义时间范围和网卡计算流量统计
-func (s *DatabaseStorage) CalculateTrafficStatsWithTimeRangeAndInterface(vmid int, networkInterface string, startTime, endTime time.Time, direction string) (*models.TrafficStats, error) {
-	records, err := s.GetTrafficRecordsForInterface(vmid, networkInterface, startTime, endTime)
+	records, err := s.GetTrafficRecords(vmid, startTime, endTime)
 	if err != nil {
 		return nil, err
 	}

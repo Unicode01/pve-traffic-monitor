@@ -109,49 +109,6 @@ func TestSetNetworkRateLimitInConfig(t *testing.T) {
 	}
 }
 
-func TestParseNetworkConfigMAC(t *testing.T) {
-	got := parseNetworkConfigMAC("virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,firewall=1")
-	if got != "aa:bb:cc:dd:ee:ff" {
-		t.Fatalf("mac = %q, want aa:bb:cc:dd:ee:ff", got)
-	}
-
-	got = parseNetworkConfigMAC("AA:BB:CC:DD:EE:00,bridge=vmbr0")
-	if got != "aa:bb:cc:dd:ee:00" {
-		t.Fatalf("bare mac = %q, want aa:bb:cc:dd:ee:00", got)
-	}
-}
-
-func TestSelectedNetworkConfigKeys(t *testing.T) {
-	config := map[string]interface{}{
-		"net0":    "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0",
-		"net1":    "virtio=AA:BB:CC:DD:EE:00,bridge=vmbr1",
-		"net2":    "virtio=AA:BB:CC:DD:EE:11,bridge=vmbr0",
-		"netstat": "not-a-nic",
-	}
-
-	all := selectedNetworkConfigKeys(config, "all")
-	if len(all) != 3 || all[0] != "net0" || all[1] != "net1" || all[2] != "net2" {
-		t.Fatalf("all keys = %#v, want [net0 net1 net2]", all)
-	}
-
-	one := selectedNetworkConfigKeys(config, "net1")
-	if len(one) != 1 || one[0] != "net1" {
-		t.Fatalf("one key = %#v, want [net1]", one)
-	}
-
-	bridge := selectedNetworkConfigKeys(config, "vmbr0")
-	if len(bridge) != 2 || bridge[0] != "net0" || bridge[1] != "net2" {
-		t.Fatalf("bridge keys = %#v, want [net0 net2]", bridge)
-	}
-}
-
-func TestParseNetworkBridge(t *testing.T) {
-	got := parseNetworkBridge("virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,firewall=1")
-	if got != "vmbr0" {
-		t.Fatalf("bridge = %q, want vmbr0", got)
-	}
-}
-
 func TestCreationTimeFromConfig(t *testing.T) {
 	got, err := CreationTimeFromConfig(map[string]interface{}{
 		"meta": "creation-qemu=8.1.2, ctime=1767225600",
@@ -169,16 +126,16 @@ func TestCreationTimeFromConfig(t *testing.T) {
 	}
 }
 
-func TestNetworkRateLimitUpdatesForInterfaceOnlyTightens(t *testing.T) {
+func TestNetworkRateLimitUpdatesOnlyTightens(t *testing.T) {
 	config := map[string]interface{}{
 		"net0": "virtio=AA:BB:CC:DD:EE:FF,bridge=vmbr0,rate=5.00",
 		"net1": "virtio=AA:BB:CC:DD:EE:00,bridge=vmbr1",
 		"net2": "virtio=AA:BB:CC:DD:EE:11,bridge=vmbr1,rate=20.00",
 	}
 
-	updates, err := networkRateLimitUpdatesForInterface(config, "all", 10)
+	updates, err := networkRateLimitUpdates(config, 10)
 	if err != nil {
-		t.Fatalf("networkRateLimitUpdatesForInterface() error = %v", err)
+		t.Fatalf("networkRateLimitUpdates() error = %v", err)
 	}
 	if len(updates) != 2 {
 		t.Fatalf("updates = %#v, want net1 and net2 only", updates)
@@ -191,17 +148,6 @@ func TestNetworkRateLimitUpdatesForInterfaceOnlyTightens(t *testing.T) {
 	}
 	if updates["net2"] != "virtio=AA:BB:CC:DD:EE:11,bridge=vmbr1,rate=10.00" {
 		t.Fatalf("net2 update = %q", updates["net2"])
-	}
-
-	updates, err = networkRateLimitUpdatesForInterface(config, "vmbr1", 10)
-	if err != nil {
-		t.Fatalf("networkRateLimitUpdatesForInterface(vmbr1) error = %v", err)
-	}
-	if len(updates) != 2 {
-		t.Fatalf("bridge updates = %#v, want net1 and net2 only", updates)
-	}
-	if _, ok := updates["net0"]; ok {
-		t.Fatalf("net0 should not be updated because it is not bridged to vmbr1")
 	}
 }
 

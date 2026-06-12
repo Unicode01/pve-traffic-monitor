@@ -24,12 +24,6 @@ type Client struct {
 	baseURL    string
 }
 
-// NetworkCounters 网卡流量计数器
-type NetworkCounters struct {
-	RXBytes uint64
-	TXBytes uint64
-}
-
 // NewClient 创建新的 PVE 客户端（本地访问模式）
 func NewClient(config models.PVEConfig) *Client {
 	// 创建自定义的 HTTP Transport
@@ -225,108 +219,6 @@ func (c *Client) GetVMStatus(vmid int) (*models.VMInfo, error) {
 	}, nil
 }
 
-// GetVMInterfaceCounters 获取指定VM各PVE网卡(net0/net1...)的流量计数器。
-// 该接口依赖 QEMU Guest Agent，并通过 PVE 配置中的 MAC 地址和 guest 内部网卡做匹配。
-func (c *Client) GetVMInterfaceCounters(vmid int) (map[string]NetworkCounters, error) {
-	netMACs, err := c.GetVMNetworkInterfaceMACs(vmid)
-	if err != nil {
-		return nil, err
-	}
-
-	resp, err := c.client.R().
-		Get(fmt.Sprintf("/nodes/%s/qemu/%d/agent/network-get-interfaces", c.config.Node, vmid))
-	if err != nil {
-		return nil, fmt.Errorf("获取虚拟机网卡统计失败: %w", err)
-	}
-	if resp.StatusCode() != http.StatusOK {
-		return nil, fmt.Errorf("PVE API 返回错误状态码: %d, 响应: %s", resp.StatusCode(), string(resp.Body()))
-	}
-
-	var result struct {
-		Data struct {
-			Result []struct {
-				Name            string `json:"name"`
-				HardwareAddress string `json:"hardware-address"`
-				Statistics      struct {
-					RXBytes uint64 `json:"rx-bytes"`
-					TXBytes uint64 `json:"tx-bytes"`
-				} `json:"statistics"`
-			} `json:"result"`
-		} `json:"data"`
-	}
-
-	if err := json.Unmarshal(resp.Body(), &result); err != nil {
-		return nil, fmt.Errorf("解析虚拟机网卡统计失败: %w", err)
-	}
-
-	guestCountersByMAC := make(map[string]NetworkCounters)
-	for _, iface := range result.Data.Result {
-		mac := normalizeMAC(iface.HardwareAddress)
-		if mac == "" {
-			continue
-		}
-		guestCountersByMAC[mac] = NetworkCounters{
-			RXBytes: iface.Statistics.RXBytes,
-			TXBytes: iface.Statistics.TXBytes,
-		}
-	}
-
-	counters := make(map[string]NetworkCounters)
-	for netName, mac := range netMACs {
-		if counter, ok := guestCountersByMAC[mac]; ok {
-			counters[netName] = counter
-		}
-	}
-
-	if len(counters) == 0 {
-		return nil, fmt.Errorf("未找到可匹配的网卡统计，请确认 QEMU Guest Agent 已启用且网卡 MAC 可见")
-	}
-
-	return counters, nil
-}
-
-// GetVMNetworkInterfaceMACs 获取PVE配置中的 net0/net1... 到 MAC 地址映射。
-func (c *Client) GetVMNetworkInterfaceMACs(vmid int) (map[string]string, error) {
-	config, err := c.GetVMConfig(vmid)
-	if err != nil {
-		return nil, err
-	}
-
-	result := make(map[string]string)
-	for _, key := range networkConfigKeys(config) {
-		netConfig, ok := config[key].(string)
-		if !ok {
-			continue
-		}
-
-		mac := parseNetworkConfigMAC(netConfig)
-		if mac != "" {
-			result[key] = mac
-		}
-	}
-
-	if len(result) == 0 {
-		return nil, fmt.Errorf("未找到网络接口配置")
-	}
-
-	return result, nil
-}
-
-// ResolveNetworkInterfaceSelector 将 all/netN/bridge 名称解析为 PVE 配置中的 netN 列表。
-func (c *Client) ResolveNetworkInterfaceSelector(vmid int, networkInterface string) ([]string, error) {
-	config, err := c.GetVMConfig(vmid)
-	if err != nil {
-		return nil, err
-	}
-
-	keys := selectedNetworkConfigKeys(config, networkInterface)
-	if len(keys) == 0 {
-		return nil, fmt.Errorf("未找到网络接口配置: %s", networkInterface)
-	}
-
-	return keys, nil
-}
-
 // ShutdownVM 关闭虚拟机（优雅关机，需要虚拟机支持 ACPI）
 func (c *Client) ShutdownVM(vmid int) error {
 	// 使用原生 HTTP 客户端避免 chunked encoding
@@ -403,13 +295,6 @@ func (c *Client) RemoveNetworkRateLimit(vmid int) error {
 	return nil
 }
 
-// RemoveNetworkRateLimitForInterface 移除指定网卡的网络速率限制，all 表示所有网卡。
-func (c *Client) RemoveNetworkRateLimitForInterface(vmid int, networkInterface string) error {
-	return c.updateNetworkConfigForInterface(vmid, networkInterface, func(netConfig string) string {
-		return setNetworkRateLimitInConfig(netConfig, 0, false)
-	}, "移除网络速率限制")
-}
-
 // DisconnectNetwork 断开虚拟机网络连接
 func (c *Client) DisconnectNetwork(vmid int) error {
 	// 获取虚拟机配置
@@ -467,13 +352,6 @@ func (c *Client) DisconnectNetwork(vmid int) error {
 	return nil
 }
 
-// DisconnectNetworkForInterface 断开指定网卡，all 表示所有网卡。
-func (c *Client) DisconnectNetworkForInterface(vmid int, networkInterface string) error {
-	return c.updateNetworkConfigForInterface(vmid, networkInterface, func(netConfig string) string {
-		return setNetworkLinkDownInConfig(netConfig, true)
-	}, "断开网络")
-}
-
 // ConnectNetwork 连接虚拟机网络
 func (c *Client) ConnectNetwork(vmid int) error {
 	// 获取虚拟机配置
@@ -528,13 +406,6 @@ func (c *Client) ConnectNetwork(vmid int) error {
 	return nil
 }
 
-// ConnectNetworkForInterface 恢复指定网卡连接，all 表示所有网卡。
-func (c *Client) ConnectNetworkForInterface(vmid int, networkInterface string) error {
-	return c.updateNetworkConfigForInterface(vmid, networkInterface, func(netConfig string) string {
-		return setNetworkLinkDownInConfig(netConfig, false)
-	}, "连接网络")
-}
-
 // SetNetworkRateLimit 设置网络速率限制（单位：MB/s，支持小数）
 func (c *Client) SetNetworkRateLimit(vmid int, rateMB float64) error {
 	// 获取虚拟机配置
@@ -578,21 +449,14 @@ func (c *Client) SetNetworkRateLimit(vmid int, rateMB float64) error {
 	return nil
 }
 
-// SetNetworkRateLimitForInterface 设置指定网卡速率限制，all 表示所有网卡。
-func (c *Client) SetNetworkRateLimitForInterface(vmid int, networkInterface string, rateMB float64) error {
-	return c.updateNetworkConfigForInterface(vmid, networkInterface, func(netConfig string) string {
-		return setNetworkRateLimitInConfig(netConfig, rateMB, true)
-	}, "设置网络速率限制")
-}
-
-// ShouldTightenNetworkRateLimitForInterface 判断指定网卡选择是否需要收紧限速。
-func (c *Client) ShouldTightenNetworkRateLimitForInterface(vmid int, networkInterface string, rateMB float64) (bool, error) {
+// ShouldTightenNetworkRateLimit 判断是否需要收紧任意网卡限速。
+func (c *Client) ShouldTightenNetworkRateLimit(vmid int, rateMB float64) (bool, error) {
 	config, err := c.GetVMConfig(vmid)
 	if err != nil {
 		return false, err
 	}
 
-	updates, err := networkRateLimitUpdatesForInterface(config, networkInterface, rateMB)
+	updates, err := networkRateLimitUpdates(config, rateMB)
 	if err != nil {
 		return false, err
 	}
@@ -600,14 +464,14 @@ func (c *Client) ShouldTightenNetworkRateLimitForInterface(vmid int, networkInte
 	return len(updates) > 0, nil
 }
 
-// TightenNetworkRateLimitForInterface 只收紧指定网卡选择的限速，不放宽已有更严格的限速。
-func (c *Client) TightenNetworkRateLimitForInterface(vmid int, networkInterface string, rateMB float64) (bool, error) {
+// TightenNetworkRateLimit 只收紧所有网卡限速，不放宽已有更严格的限速。
+func (c *Client) TightenNetworkRateLimit(vmid int, rateMB float64) (bool, error) {
 	config, err := c.GetVMConfig(vmid)
 	if err != nil {
 		return false, err
 	}
 
-	updates, err := networkRateLimitUpdatesForInterface(config, networkInterface, rateMB)
+	updates, err := networkRateLimitUpdates(config, rateMB)
 	if err != nil {
 		return false, err
 	}
@@ -638,25 +502,6 @@ func (c *Client) GetNetworkRateLimit(vmid int) (float64, error) {
 	}
 
 	return NetworkRateLimitFromConfig(config)
-}
-
-// GetNetworkRateLimitForInterface 获取指定网卡当前网络速率限制（MB/s，0表示未限制）。
-func (c *Client) GetNetworkRateLimitForInterface(vmid int, networkInterface string) (float64, error) {
-	config, err := c.GetVMConfig(vmid)
-	if err != nil {
-		return 0, err
-	}
-
-	selected := make(map[string]interface{})
-	for _, key := range selectedNetworkConfigKeys(config, networkInterface) {
-		selected[key] = config[key]
-	}
-
-	if len(selected) == 0 {
-		return 0, fmt.Errorf("未找到网络接口配置: %s", networkInterface)
-	}
-
-	return NetworkRateLimitFromConfig(selected)
 }
 
 // NetworkRateLimitFromConfig 从PVE配置中读取当前最宽松的网络限速值（MB/s，0表示有网卡未限制）
@@ -820,40 +665,14 @@ func (c *Client) RestoreNetworkLinkStates(vmid int, states map[string]bool) erro
 	return nil
 }
 
-func (c *Client) updateNetworkConfigForInterface(vmid int, networkInterface string, update func(string) string, action string) error {
-	config, err := c.GetVMConfig(vmid)
-	if err != nil {
-		return fmt.Errorf("获取虚拟机配置失败: %w", err)
-	}
-
-	updated := false
-	for _, key := range selectedNetworkConfigKeys(config, networkInterface) {
-		netConfig, ok := config[key].(string)
-		if !ok {
-			continue
-		}
-
-		if err := c.putVMConfig(vmid, map[string]string{key: update(netConfig)}); err != nil {
-			return fmt.Errorf("%s失败: %w", action, err)
-		}
-		updated = true
-	}
-
-	if !updated {
-		return fmt.Errorf("未找到网络接口配置: %s", networkInterface)
-	}
-
-	return nil
-}
-
-func networkRateLimitUpdatesForInterface(config map[string]interface{}, networkInterface string, rateMB float64) (map[string]string, error) {
+func networkRateLimitUpdates(config map[string]interface{}, rateMB float64) (map[string]string, error) {
 	if rateMB <= 0 {
 		return nil, fmt.Errorf("限速值必须大于 0 MB/s")
 	}
 
-	selectedKeys := selectedNetworkConfigKeys(config, networkInterface)
+	selectedKeys := networkConfigKeys(config)
 	if len(selectedKeys) == 0 {
-		return nil, fmt.Errorf("未找到网络接口配置: %s", networkInterface)
+		return nil, fmt.Errorf("未找到网络接口配置")
 	}
 
 	updates := make(map[string]string)
@@ -884,30 +703,6 @@ func shouldTightenNetworkRateLimit(netConfig string, rateMB float64) (bool, erro
 		return true, nil
 	}
 	return currentRate > rateMB, nil
-}
-
-func selectedNetworkConfigKeys(config map[string]interface{}, networkInterface string) []string {
-	networkInterface = strings.ToLower(strings.TrimSpace(networkInterface))
-	if networkInterface == "" || networkInterface == models.NetworkInterfaceAll {
-		return networkConfigKeys(config)
-	}
-
-	if _, exists := config[networkInterface]; exists && isNetworkConfigKey(networkInterface) {
-		return []string{networkInterface}
-	}
-
-	var keys []string
-	for _, key := range networkConfigKeys(config) {
-		netConfig, ok := config[key].(string)
-		if !ok {
-			continue
-		}
-		if strings.EqualFold(parseNetworkBridge(netConfig), networkInterface) {
-			keys = append(keys, key)
-		}
-	}
-
-	return keys
 }
 
 func setNetworkRateLimitInConfig(netConfig string, rateMB float64, enabled bool) string {
@@ -964,64 +759,6 @@ func isNetworkConfigKey(key string) bool {
 		}
 	}
 
-	return true
-}
-
-func parseNetworkConfigMAC(netConfig string) string {
-	for _, part := range strings.Split(netConfig, ",") {
-		trimmed := strings.TrimSpace(part)
-		if mac := normalizeMAC(trimmed); isMACAddress(mac) {
-			return mac
-		}
-
-		pieces := strings.SplitN(trimmed, "=", 2)
-		if len(pieces) != 2 {
-			continue
-		}
-
-		mac := normalizeMAC(pieces[1])
-		if isMACAddress(mac) {
-			return mac
-		}
-	}
-
-	return ""
-}
-
-func parseNetworkBridge(netConfig string) string {
-	for _, part := range strings.Split(netConfig, ",") {
-		pieces := strings.SplitN(strings.TrimSpace(part), "=", 2)
-		if len(pieces) != 2 {
-			continue
-		}
-		if strings.EqualFold(strings.TrimSpace(pieces[0]), "bridge") {
-			return strings.TrimSpace(pieces[1])
-		}
-	}
-
-	return ""
-}
-
-func normalizeMAC(mac string) string {
-	return strings.ToLower(strings.TrimSpace(mac))
-}
-
-func isMACAddress(value string) bool {
-	if len(value) != 17 {
-		return false
-	}
-	for i, r := range value {
-		switch {
-		case i%3 == 2:
-			if r != ':' {
-				return false
-			}
-		case r >= '0' && r <= '9':
-		case r >= 'a' && r <= 'f':
-		default:
-			return false
-		}
-	}
 	return true
 }
 

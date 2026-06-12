@@ -799,9 +799,6 @@ generate_config() {
             read -p "流量方向 [both]: " rule_direction
             rule_direction=${rule_direction:-both}
 
-            read -p "计费接口（all、net0/net1 或 vmbr0 等网桥）[all]: " rule_network_interface
-            rule_network_interface=${rule_network_interface:-all}
-
             read -p "流量限制（GB）[1000]: " rule_limit_gb
             rule_limit_gb=${rule_limit_gb:-1000}
 
@@ -838,7 +835,6 @@ generate_config() {
             "period": "$rule_period",
             "use_creation_time": true,
             "traffic_direction": "$rule_direction",
-            "network_interface": "$rule_network_interface",
             "limit_gb": $rule_limit_gb,
             "action": "$rule_action",
             $rule_rate_limit

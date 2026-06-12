@@ -1,7 +1,6 @@
 package main
 
 import (
-	"pve-traffic-monitor/pkg/pve"
 	"testing"
 	"time"
 )
@@ -44,26 +43,6 @@ func TestShouldApplyRateLimitOnlyTightens(t *testing.T) {
 				t.Fatalf("shouldApplyRateLimit(%v, %v) = %v, want %v", tt.current, tt.desired, got, tt.want)
 			}
 		})
-	}
-}
-
-func TestAggregateInterfaceCounters(t *testing.T) {
-	counters := map[string]pve.NetworkCounters{
-		"net0": {RXBytes: 100, TXBytes: 50},
-		"net2": {RXBytes: 300, TXBytes: 70},
-	}
-
-	total, missing := aggregateInterfaceCounters(counters, []string{"net0", "net2"})
-	if len(missing) != 0 {
-		t.Fatalf("missing = %#v, want none", missing)
-	}
-	if total.RXBytes != 400 || total.TXBytes != 120 {
-		t.Fatalf("total = rx:%d tx:%d, want rx:400 tx:120", total.RXBytes, total.TXBytes)
-	}
-
-	_, missing = aggregateInterfaceCounters(counters, []string{"net0", "net1"})
-	if len(missing) != 1 || missing[0] != "net1" {
-		t.Fatalf("missing = %#v, want [net1]", missing)
 	}
 }
 

@@ -381,20 +381,15 @@ func (m *Monitor) processVM(vm models.VMInfo) error {
 	// 保存流量记录
 	now := time.Now()
 	record := models.TrafficRecord{
-		VMID:             vm.VMID,
-		NetworkInterface: models.NetworkInterfaceAll,
-		Timestamp:        now,
-		RXBytes:          status.NetworkRX,
-		TXBytes:          status.NetworkTX,
-		TotalBytes:       status.NetworkRX + status.NetworkTX,
+		VMID:       vm.VMID,
+		Timestamp:  now,
+		RXBytes:    status.NetworkRX,
+		TXBytes:    status.NetworkTX,
+		TotalBytes: status.NetworkRX + status.NetworkTX,
 	}
 
 	if err := m.storage.SaveTrafficRecord(record); err != nil {
 		return fmt.Errorf("保存流量记录失败: %w", err)
-	}
-
-	if err := m.saveRuleInterfaceTrafficRecords(vm, now); err != nil {
-		log.Printf("保存网卡流量记录失败 (VM %d): %v", vm.VMID, err)
 	}
 
 	// 检查并应用规则
@@ -404,87 +399,6 @@ func (m *Monitor) processVM(vm models.VMInfo) error {
 	}
 
 	return nil
-}
-
-func (m *Monitor) saveRuleInterfaceTrafficRecords(vm models.VMInfo, timestamp time.Time) error {
-	requiredSelectors := m.requiredRuleNetworkInterfaces(vm)
-	if len(requiredSelectors) == 0 {
-		return nil
-	}
-
-	counters, err := m.pveClient.GetVMInterfaceCounters(vm.VMID)
-	if err != nil {
-		return err
-	}
-
-	for _, networkInterface := range requiredSelectors {
-		selectedKeys, err := m.pveClient.ResolveNetworkInterfaceSelector(vm.VMID, networkInterface)
-		if err != nil {
-			log.Printf("VM%d 无法解析网卡选择器 %s: %v", vm.VMID, networkInterface, err)
-			continue
-		}
-
-		counter, missingKeys := aggregateInterfaceCounters(counters, selectedKeys)
-		if len(missingKeys) > 0 {
-			log.Printf("VM%d 网卡选择器 %s 缺少统计: %s", vm.VMID, networkInterface, strings.Join(missingKeys, ","))
-			continue
-		}
-
-		record := models.TrafficRecord{
-			VMID:             vm.VMID,
-			NetworkInterface: networkInterface,
-			Timestamp:        timestamp,
-			RXBytes:          counter.RXBytes,
-			TXBytes:          counter.TXBytes,
-			TotalBytes:       counter.RXBytes + counter.TXBytes,
-		}
-
-		if err := m.storage.SaveTrafficRecord(record); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func aggregateInterfaceCounters(counters map[string]pve.NetworkCounters, selectedKeys []string) (pve.NetworkCounters, []string) {
-	var total pve.NetworkCounters
-	var missing []string
-
-	for _, key := range selectedKeys {
-		counter, ok := counters[key]
-		if !ok {
-			missing = append(missing, key)
-			continue
-		}
-
-		total.RXBytes += counter.RXBytes
-		total.TXBytes += counter.TXBytes
-	}
-
-	return total, missing
-}
-
-func (m *Monitor) requiredRuleNetworkInterfaces(vm models.VMInfo) []string {
-	cfg := m.configLoader.GetConfig()
-	seen := make(map[string]bool)
-	var interfaces []string
-
-	for _, rule := range cfg.Rules {
-		if !rule.Enabled || !m.vmMatchesRule(vm, rule) {
-			continue
-		}
-
-		networkInterface := ruleNetworkInterface(rule)
-		if networkInterface == models.NetworkInterfaceAll || seen[networkInterface] {
-			continue
-		}
-
-		seen[networkInterface] = true
-		interfaces = append(interfaces, networkInterface)
-	}
-
-	return interfaces
 }
 
 func (m *Monitor) applyRules(vm models.VMInfo) error {
@@ -510,10 +424,9 @@ func (m *Monitor) applyRules(vm models.VMInfo) error {
 
 	// 2. 按 (period, direction, useCreationTime) 分组，避免重复计算
 	type StatsKey struct {
-		Period           string
-		Direction        string
-		NetworkInterface string
-		UseCreationTime  bool
+		Period          string
+		Direction       string
+		UseCreationTime bool
 	}
 
 	statsMap := make(map[StatsKey]*models.TrafficStats)
@@ -525,13 +438,11 @@ func (m *Monitor) applyRules(vm models.VMInfo) error {
 		if rule.TrafficDirection != "" {
 			direction = rule.TrafficDirection
 		}
-		networkInterface := ruleNetworkInterface(rule)
 
 		key := StatsKey{
-			Period:           rule.Period,
-			Direction:        direction,
-			NetworkInterface: networkInterface,
-			UseCreationTime:  rule.UseCreationTime,
+			Period:          rule.Period,
+			Direction:       direction,
+			UseCreationTime: rule.UseCreationTime,
 		}
 
 		// 如果已经计算过这个组合，跳过
@@ -540,7 +451,7 @@ func (m *Monitor) applyRules(vm models.VMInfo) error {
 		}
 
 		// 计算流量统计
-		stats, err := m.calculateTrafficStatsWithCache(vm.VMID, rule.Period, direction, networkInterface, rule.UseCreationTime, &vmCreationTime)
+		stats, err := m.calculateTrafficStatsWithCache(vm.VMID, rule.Period, direction, rule.UseCreationTime, &vmCreationTime)
 		if err != nil {
 			log.Printf("计算流量统计失败 (VM %d): %v", vm.VMID, err)
 			continue
@@ -555,13 +466,11 @@ func (m *Monitor) applyRules(vm models.VMInfo) error {
 		if rule.TrafficDirection != "" {
 			direction = rule.TrafficDirection
 		}
-		networkInterface := ruleNetworkInterface(rule)
 
 		key := StatsKey{
-			Period:           rule.Period,
-			Direction:        direction,
-			NetworkInterface: networkInterface,
-			UseCreationTime:  rule.UseCreationTime,
+			Period:          rule.Period,
+			Direction:       direction,
+			UseCreationTime: rule.UseCreationTime,
 		}
 
 		stats, exists := statsMap[key]
@@ -592,7 +501,7 @@ func (m *Monitor) applyRules(vm models.VMInfo) error {
 }
 
 // calculateTrafficStatsWithCache 带缓存的流量统计计算
-func (m *Monitor) calculateTrafficStatsWithCache(vmid int, period string, direction string, networkInterface string, useCreationTime bool, vmCreationTime *time.Time) (*models.TrafficStats, error) {
+func (m *Monitor) calculateTrafficStatsWithCache(vmid int, period string, direction string, useCreationTime bool, vmCreationTime *time.Time) (*models.TrafficStats, error) {
 	now := time.Now()
 	var startTime time.Time
 	var creationTime time.Time
@@ -612,21 +521,21 @@ func (m *Monitor) calculateTrafficStatsWithCache(vmid int, period string, direct
 	}
 
 	// 尝试从缓存获取
-	if cachedStats, ok := m.trafficCache.GetForInterface(vmid, period, direction, networkInterface, startTime); ok {
-		debugLog("缓存命中: VM%d period=%s direction=%s interface=%s", vmid, period, direction, networkInterface)
+	if cachedStats, ok := m.trafficCache.Get(vmid, period, direction, startTime); ok {
+		debugLog("缓存命中: VM%d period=%s direction=%s", vmid, period, direction)
 		return cachedStats, nil
 	}
 
-	debugLog("缓存未命中: VM%d period=%s direction=%s interface=%s", vmid, period, direction, networkInterface)
+	debugLog("缓存未命中: VM%d period=%s direction=%s", vmid, period, direction)
 
 	// 缓存未命中，计算统计
 	var stats *models.TrafficStats
 	var err error
 
 	if useCreationTime && !creationTime.IsZero() {
-		stats, err = m.storage.CalculateTrafficStatsWithDirectionAndInterface(vmid, period, creationTime, true, direction, networkInterface)
+		stats, err = m.storage.CalculateTrafficStatsWithDirection(vmid, period, creationTime, true, direction)
 	} else {
-		stats, err = m.storage.CalculateTrafficStatsWithDirectionAndInterface(vmid, period, time.Time{}, false, direction, networkInterface)
+		stats, err = m.storage.CalculateTrafficStatsWithDirection(vmid, period, time.Time{}, false, direction)
 	}
 
 	if err != nil {
@@ -634,7 +543,7 @@ func (m *Monitor) calculateTrafficStatsWithCache(vmid int, period string, direct
 	}
 
 	// 存入缓存
-	m.trafficCache.SetForInterface(vmid, period, direction, networkInterface, startTime, stats)
+	m.trafficCache.Set(vmid, period, direction, startTime, stats)
 
 	return stats, nil
 }
@@ -664,7 +573,6 @@ func (m *Monitor) vmMatchesRule(vm models.VMInfo, rule models.Rule) bool {
 }
 
 func (m *Monitor) executeAction(vm models.VMInfo, rule models.Rule, stats *models.TrafficStats, creationTime time.Time) error {
-	networkInterface := ruleNetworkInterface(rule)
 	actionLog := models.ActionLog{
 		VMID:      vm.VMID,
 		RuleName:  rule.Name,
@@ -685,10 +593,10 @@ func (m *Monitor) executeAction(vm models.VMInfo, rule models.Rule, stats *model
 	}
 
 	if rule.Action == models.ActionRateLimit {
-		needsTighten, err := m.pveClient.ShouldTightenNetworkRateLimitForInterface(vm.VMID, networkInterface, rule.RateLimitMB)
+		needsTighten, err := m.pveClient.ShouldTightenNetworkRateLimit(vm.VMID, rule.RateLimitMB)
 		if err == nil && !needsTighten {
-			debugLog("VM%d 网卡 %s 当前限速已不高于目标 %.2fMB/s，跳过重复限速",
-				vm.VMID, networkInterface, rule.RateLimitMB)
+			debugLog("VM%d 当前限速已不高于目标 %.2fMB/s，跳过重复限速",
+				vm.VMID, rule.RateLimitMB)
 			return nil
 		}
 	} else if actionTag != "" {
@@ -733,17 +641,17 @@ func (m *Monitor) executeAction(vm models.VMInfo, rule models.Rule, stats *model
 		}
 
 	case models.ActionDisconnect:
-		log.Printf("执行操作: VM%d 网卡 %s 断网", vm.VMID, networkInterface)
-		err = m.pveClient.DisconnectNetworkForInterface(vm.VMID, networkInterface)
+		log.Printf("执行操作: VM%d 断网", vm.VMID)
+		err = m.pveClient.DisconnectNetwork(vm.VMID)
 
 		if err == nil {
 			m.pveClient.AddVMTag(vm.VMID, models.TagTrafficDisconnect)
 		}
 
 	case models.ActionRateLimit:
-		log.Printf("执行操作: VM%d 网卡 %s 限速至 %.2fMB/s", vm.VMID, networkInterface, rule.RateLimitMB)
+		log.Printf("执行操作: VM%d 限速至 %.2fMB/s", vm.VMID, rule.RateLimitMB)
 		var applied bool
-		applied, err = m.pveClient.TightenNetworkRateLimitForInterface(vm.VMID, networkInterface, rule.RateLimitMB)
+		applied, err = m.pveClient.TightenNetworkRateLimit(vm.VMID, rule.RateLimitMB)
 
 		if err == nil && applied {
 			m.pveClient.AddVMTag(vm.VMID, models.TagTrafficLimited)
@@ -775,14 +683,6 @@ func shouldApplyRateLimit(currentRateMB, desiredRateMB float64) bool {
 		return true
 	}
 	return currentRateMB > desiredRateMB
-}
-
-func ruleNetworkInterface(rule models.Rule) string {
-	networkInterface := strings.ToLower(strings.TrimSpace(rule.NetworkInterface))
-	if networkInterface == "" {
-		return models.NetworkInterfaceAll
-	}
-	return networkInterface
 }
 
 func (m *Monitor) handleExport(vmidStr string, period string) error {
