@@ -248,7 +248,6 @@ npm run build    # 构建生产版本
       "enabled": true,                  // 是否启用
       "period": "month",                // 周期: hour/day/month
       "traffic_direction": "both",      // 流量方向: both/upload/download (默认 both)
-      "network_interface": "all",       // 计费接口: all/net0/net1/vmbr0... (默认 all)
       "limit_gb": 1000,                 // 流量限制（GB）
       "action": "shutdown",             // 操作: shutdown/rate_limit
       "rate_limit_mb": 10,              // 限速值 MB/s（仅 rate_limit 操作）
@@ -265,19 +264,12 @@ npm run build    # 构建生产版本
 - `upload` / `tx` - 仅上传流量
 - `download` / `rx` - 仅下载流量
 
-**计费接口说明**:
-- `all` - 所有网卡聚合流量（默认，使用 PVE VM 级 `netin/netout`）
-- `vmbr0` / `vmbr1` - 按网桥计费；系统会自动检测 VM 中 `bridge=vmbr0` 的 `netX` 网卡并聚合这些网卡流量
-- `net0` / `net1` - 精确指定 PVE 配置中的某张 VM 网卡
-- 指定网桥或单网卡时，系统会用 PVE 配置中的 MAC 地址匹配 guest agent 返回的网卡统计
-
 **示例场景**:
 ```json
 {
   "name": "upload_limit",
   "period": "month",
   "traffic_direction": "upload",    // 仅限制上传流量
-  "network_interface": "vmbr0",      // 仅统计/限制接入 vmbr0 的 VM 网卡
   "limit_gb": 500,
   "action": "rate_limit",
   "rate_limit_mb": 10

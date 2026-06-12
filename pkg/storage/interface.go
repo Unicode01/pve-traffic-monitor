@@ -14,9 +14,6 @@ type Interface interface {
 	// GetTrafficRecords 获取流量记录
 	GetTrafficRecords(vmid int, startTime, endTime time.Time) ([]models.TrafficRecord, error)
 
-	// GetTrafficRecordsForInterface 获取指定网卡的流量记录
-	GetTrafficRecordsForInterface(vmid int, networkInterface string, startTime, endTime time.Time) ([]models.TrafficRecord, error)
-
 	// CalculateTrafficStats 计算流量统计
 	CalculateTrafficStats(vmid int, period string) (*models.TrafficStats, error)
 
@@ -26,14 +23,8 @@ type Interface interface {
 	// CalculateTrafficStatsWithDirection 使用指定方向和时间计算流量统计
 	CalculateTrafficStatsWithDirection(vmid int, period string, creationTime time.Time, useCreationTime bool, direction string) (*models.TrafficStats, error)
 
-	// CalculateTrafficStatsWithDirectionAndInterface 使用指定方向、时间和网卡计算流量统计
-	CalculateTrafficStatsWithDirectionAndInterface(vmid int, period string, creationTime time.Time, useCreationTime bool, direction string, networkInterface string) (*models.TrafficStats, error)
-
 	// CalculateTrafficStatsWithTimeRange 使用自定义时间范围计算流量统计
 	CalculateTrafficStatsWithTimeRange(vmid int, startTime, endTime time.Time, direction string) (*models.TrafficStats, error)
-
-	// CalculateTrafficStatsWithTimeRangeAndInterface 使用自定义时间范围和网卡计算流量统计
-	CalculateTrafficStatsWithTimeRangeAndInterface(vmid int, networkInterface string, startTime, endTime time.Time, direction string) (*models.TrafficStats, error)
 
 	// SaveActionLog 保存操作日志
 	SaveActionLog(log models.ActionLog) error

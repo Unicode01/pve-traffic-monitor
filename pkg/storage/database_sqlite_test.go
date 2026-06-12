@@ -26,8 +26,6 @@ func TestSQLiteStorageEndToEnd(t *testing.T) {
 	records := []models.TrafficRecord{
 		{VMID: 101, Timestamp: baseTime, RXBytes: 1000, TXBytes: 500, TotalBytes: 1500},
 		{VMID: 101, Timestamp: baseTime.Add(time.Minute), RXBytes: 1400, TXBytes: 800, TotalBytes: 2200},
-		{VMID: 101, NetworkInterface: "net0", Timestamp: baseTime, RXBytes: 100, TXBytes: 50, TotalBytes: 150},
-		{VMID: 101, NetworkInterface: "net0", Timestamp: baseTime.Add(time.Minute), RXBytes: 250, TXBytes: 125, TotalBytes: 375},
 	}
 
 	for _, record := range records {
@@ -50,14 +48,6 @@ func TestSQLiteStorageEndToEnd(t *testing.T) {
 	}
 	if stats.RXBytes != 400 || stats.TXBytes != 300 || stats.TotalBytes != 700 {
 		t.Fatalf("stats = rx:%d tx:%d total:%d, want rx:400 tx:300 total:700", stats.RXBytes, stats.TXBytes, stats.TotalBytes)
-	}
-
-	net0Stats, err := store.CalculateTrafficStatsWithTimeRangeAndInterface(101, "net0", baseTime.Add(-time.Second), baseTime.Add(2*time.Minute), models.DirectionBoth)
-	if err != nil {
-		t.Fatalf("calculate net0 traffic stats: %v", err)
-	}
-	if net0Stats.RXBytes != 150 || net0Stats.TXBytes != 75 || net0Stats.TotalBytes != 225 {
-		t.Fatalf("net0 stats = rx:%d tx:%d total:%d, want rx:150 tx:75 total:225", net0Stats.RXBytes, net0Stats.TXBytes, net0Stats.TotalBytes)
 	}
 
 	actionLog := models.ActionLog{
@@ -98,23 +88,23 @@ func TestSQLiteStorageEndToEnd(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get total record count: %v", err)
 	}
-	if totalCount != 4 {
-		t.Fatalf("total count = %d, want 4", totalCount)
+	if totalCount != 2 {
+		t.Fatalf("total count = %d, want 2", totalCount)
 	}
 
 	deleted, err := store.DeleteRecordsInRange(101, baseTime, baseTime)
 	if err != nil {
 		t.Fatalf("delete records in range: %v", err)
 	}
-	if deleted != 2 {
-		t.Fatalf("deleted = %d, want 2", deleted)
+	if deleted != 1 {
+		t.Fatalf("deleted = %d, want 1", deleted)
 	}
 
 	rangeCount, err := store.CountRecordsInRange(101, baseTime.Add(-time.Second), baseTime.Add(2*time.Minute))
 	if err != nil {
 		t.Fatalf("count records in range: %v", err)
 	}
-	if rangeCount != 2 {
-		t.Fatalf("range count = %d, want 2", rangeCount)
+	if rangeCount != 1 {
+		t.Fatalf("range count = %d, want 1", rangeCount)
 	}
 }

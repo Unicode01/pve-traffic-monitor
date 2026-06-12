@@ -1088,14 +1088,6 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	if direction == "" {
 		direction = "both"
 	}
-	networkInterface := r.URL.Query().Get("network_interface")
-	if networkInterface == "" {
-		networkInterface = models.NetworkInterfaceAll
-	}
-	if !models.IsValidNetworkInterfaceSelector(networkInterface) {
-		s.sendError(w, "Invalid network_interface, use all, net0/net1, or bridge name like vmbr0", http.StatusBadRequest)
-		return
-	}
 
 	// 检查是否使用自定义时间范围
 	startStr := r.URL.Query().Get("start")
@@ -1160,10 +1152,10 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 
 		if useCustomRange {
 			// 使用自定义时间范围
-			stats, err = s.storage.CalculateTrafficStatsWithTimeRangeAndInterface(vm.VMID, networkInterface, startTime, endTime, direction)
+			stats, err = s.storage.CalculateTrafficStatsWithTimeRange(vm.VMID, startTime, endTime, direction)
 		} else {
 			// 使用预设周期
-			stats, err = s.storage.CalculateTrafficStatsWithDirectionAndInterface(vm.VMID, period, time.Time{}, false, direction, networkInterface)
+			stats, err = s.storage.CalculateTrafficStatsWithDirection(vm.VMID, period, time.Time{}, false, direction)
 		}
 
 		if err == nil {
@@ -1182,11 +1174,10 @@ func (s *Server) handleStats(w http.ResponseWriter, r *http.Request) {
 	}
 
 	s.sendJSON(w, map[string]interface{}{
-		"success":           true,
-		"data":              allStats,
-		"period":            period,
-		"direction":         direction,
-		"network_interface": networkInterface,
+		"success":   true,
+		"data":      allStats,
+		"period":    period,
+		"direction": direction,
 	})
 }
 
@@ -1233,14 +1224,6 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	startStr := r.URL.Query().Get("start")
 	endStr := r.URL.Query().Get("end")
 	granularity := r.URL.Query().Get("granularity")
-	networkInterface := r.URL.Query().Get("network_interface")
-	if networkInterface == "" {
-		networkInterface = models.NetworkInterfaceAll
-	}
-	if !models.IsValidNetworkInterfaceSelector(networkInterface) {
-		s.sendError(w, "Invalid network_interface, use all, net0/net1, or bridge name like vmbr0", http.StatusBadRequest)
-		return
-	}
 
 	var startTime, endTime time.Time
 	var period string
@@ -1303,26 +1286,25 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	// 构建缓存key
 	var cacheKey string
 	if useCustomRange {
-		cacheKey = fmt.Sprintf("history_%d_%s_%s_%s_%s", vmid, period, networkInterface, startTime.Format("20060102150405"), endTime.Format("20060102150405"))
+		cacheKey = fmt.Sprintf("history_%d_%s_%s_%s", vmid, period, startTime.Format("20060102150405"), endTime.Format("20060102150405"))
 	} else {
-		cacheKey = fmt.Sprintf("history_%d_%s_%s", vmid, period, networkInterface)
+		cacheKey = fmt.Sprintf("history_%d_%s", vmid, period)
 	}
 
 	// 检查缓存
 	cached, ok := s.getCache(cacheKey)
 	if ok {
 		s.sendJSON(w, map[string]interface{}{
-			"success":           true,
-			"data":              cached,
-			"period":            period,
-			"network_interface": networkInterface,
-			"cached":            true,
+			"success": true,
+			"data":    cached,
+			"period":  period,
+			"cached":  true,
 		})
 		return
 	}
 
 	// 获取历史记录
-	records, err := s.storage.GetTrafficRecordsForInterface(vmid, networkInterface, startTime, endTime)
+	records, err := s.storage.GetTrafficRecords(vmid, startTime, endTime)
 	if err != nil {
 		s.sendError(w, "Failed to get traffic records: "+err.Error(), http.StatusInternalServerError)
 		return
@@ -1331,10 +1313,9 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	if len(records) == 0 {
 		emptyResult := []map[string]interface{}{}
 		s.sendJSON(w, map[string]interface{}{
-			"success":           true,
-			"data":              emptyResult,
-			"period":            period,
-			"network_interface": networkInterface,
+			"success": true,
+			"data":    emptyResult,
+			"period":  period,
 		})
 		return
 	}
@@ -1357,11 +1338,10 @@ func (s *Server) handleHistory(w http.ResponseWriter, r *http.Request) {
 	s.setCache(cacheKey, aggregated, cacheTTL)
 
 	s.sendJSON(w, map[string]interface{}{
-		"success":           true,
-		"data":              aggregated,
-		"period":            period,
-		"network_interface": networkInterface,
-		"cached":            false,
+		"success": true,
+		"data":    aggregated,
+		"period":  period,
+		"cached":  false,
 	})
 }
 
