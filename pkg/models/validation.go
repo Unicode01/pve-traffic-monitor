@@ -164,9 +164,9 @@ func (r *Rule) Validate() error {
 		}
 	}
 
-	// 验证网卡选择
+	// 验证网卡/网桥选择
 	if r.NetworkInterface != "" && !IsValidNetworkInterfaceSelector(r.NetworkInterface) {
-		return fmt.Errorf("不支持的网卡选择: %s (支持: all 或 net0/net1/...)", r.NetworkInterface)
+		return fmt.Errorf("不支持的网卡选择: %s (支持: all、net0/net1 或网桥名如 vmbr0)", r.NetworkInterface)
 	}
 
 	// 验证限制值
@@ -199,19 +199,38 @@ func (r *Rule) Validate() error {
 	return nil
 }
 
-// IsValidNetworkInterfaceSelector 验证网卡选择器，all 表示所有网卡，netN 表示 PVE 配置中的某张网卡。
+// IsValidNetworkInterfaceSelector 验证网卡选择器。
+// all 表示所有网卡，netN 表示 PVE 配置中的某张 VM 网卡，其他合法 Linux 接口名表示网桥选择器（如 vmbr0）。
 func IsValidNetworkInterfaceSelector(selector string) bool {
 	selector = strings.ToLower(strings.TrimSpace(selector))
 	if selector == "" || selector == NetworkInterfaceAll {
 		return true
 	}
-	if !strings.HasPrefix(selector, "net") || len(selector) == len("net") {
+
+	if strings.HasPrefix(selector, "net") && len(selector) > len("net") {
+		allDigits := true
+		for _, r := range selector[len("net"):] {
+			if r < '0' || r > '9' {
+				allDigits = false
+				break
+			}
+		}
+		if allDigits {
+			return true
+		}
+	}
+
+	if len(selector) > 64 {
 		return false
 	}
-	for _, r := range selector[len("net"):] {
-		if r < '0' || r > '9' {
+	for _, r := range selector {
+		switch {
+		case r >= 'a' && r <= 'z':
+		case r >= '0' && r <= '9':
+		case r == '_' || r == '-' || r == '.' || r == ':':
+		default:
 			return false
 		}
 	}
-	return true
+	return selector != ""
 }

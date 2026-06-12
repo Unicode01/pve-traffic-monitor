@@ -44,7 +44,7 @@
             "period": "month",
             "use_creation_time": true,
             "traffic_direction": "upload",
-            "network_interface": "all",
+            "network_interface": "vmbr0",
             "limit_gb": 500,
             "action": "rate_limit",
             "rate_limit_mb": 0.5,

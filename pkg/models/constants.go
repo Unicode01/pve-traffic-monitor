@@ -30,7 +30,7 @@ const (
 	DirectionDownload = "download"
 	DirectionRX       = "rx"
 
-	// 网卡选择
+	// 计费接口选择
 	NetworkInterfaceAll = "all"
 
 	// 周期类型

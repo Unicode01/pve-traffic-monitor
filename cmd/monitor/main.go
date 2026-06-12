@@ -407,8 +407,8 @@ func (m *Monitor) processVM(vm models.VMInfo) error {
 }
 
 func (m *Monitor) saveRuleInterfaceTrafficRecords(vm models.VMInfo, timestamp time.Time) error {
-	requiredInterfaces := m.requiredRuleNetworkInterfaces(vm)
-	if len(requiredInterfaces) == 0 {
+	requiredSelectors := m.requiredRuleNetworkInterfaces(vm)
+	if len(requiredSelectors) == 0 {
 		return nil
 	}
 
@@ -417,10 +417,16 @@ func (m *Monitor) saveRuleInterfaceTrafficRecords(vm models.VMInfo, timestamp ti
 		return err
 	}
 
-	for _, networkInterface := range requiredInterfaces {
-		counter, ok := counters[networkInterface]
-		if !ok {
-			log.Printf("VM%d 未找到网卡 %s 的 guest agent 统计", vm.VMID, networkInterface)
+	for _, networkInterface := range requiredSelectors {
+		selectedKeys, err := m.pveClient.ResolveNetworkInterfaceSelector(vm.VMID, networkInterface)
+		if err != nil {
+			log.Printf("VM%d 无法解析网卡选择器 %s: %v", vm.VMID, networkInterface, err)
+			continue
+		}
+
+		counter, missingKeys := aggregateInterfaceCounters(counters, selectedKeys)
+		if len(missingKeys) > 0 {
+			log.Printf("VM%d 网卡选择器 %s 缺少统计: %s", vm.VMID, networkInterface, strings.Join(missingKeys, ","))
 			continue
 		}
 
@@ -439,6 +445,24 @@ func (m *Monitor) saveRuleInterfaceTrafficRecords(vm models.VMInfo, timestamp ti
 	}
 
 	return nil
+}
+
+func aggregateInterfaceCounters(counters map[string]pve.NetworkCounters, selectedKeys []string) (pve.NetworkCounters, []string) {
+	var total pve.NetworkCounters
+	var missing []string
+
+	for _, key := range selectedKeys {
+		counter, ok := counters[key]
+		if !ok {
+			missing = append(missing, key)
+			continue
+		}
+
+		total.RXBytes += counter.RXBytes
+		total.TXBytes += counter.TXBytes
+	}
+
+	return total, missing
 }
 
 func (m *Monitor) requiredRuleNetworkInterfaces(vm models.VMInfo) []string {

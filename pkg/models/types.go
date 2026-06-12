@@ -35,7 +35,7 @@ type Rule struct {
 	Period           string   `json:"period"`                      // hour, day, month
 	UseCreationTime  bool     `json:"use_creation_time,omitempty"` // 是否使用虚拟机创建时间作为周期基准
 	TrafficDirection string   `json:"traffic_direction,omitempty"` // both, upload, download (默认 both)
-	NetworkInterface string   `json:"network_interface,omitempty"` // all, net0, net1... (默认 all)
+	NetworkInterface string   `json:"network_interface,omitempty"` // all, net0, net1... 或网桥名如 vmbr0 (默认 all)
 	LimitGB          float64  `json:"limit_gb"`
 	Action           string   `json:"action"`                  // shutdown, stop, disconnect, rate_limit
 	ForceStop        bool     `json:"force_stop,omitempty"`    // 是否强制停止（仅当 action=shutdown 时有效）

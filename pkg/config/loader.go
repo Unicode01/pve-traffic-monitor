@@ -205,9 +205,9 @@ func (l *Loader) validateConfig(config *models.Config) error {
 			}
 		}
 
-		// 验证网卡选择
+		// 验证计费接口选择
 		if rule.NetworkInterface != "" && !models.IsValidNetworkInterfaceSelector(rule.NetworkInterface) {
-			return fmt.Errorf("规则 %s 网卡选择无效: %s (支持: all 或 net0/net1/...)", rule.Name, rule.NetworkInterface)
+			return fmt.Errorf("规则 %s 网卡选择无效: %s (支持: all、net0/net1 或网桥名如 vmbr0)", rule.Name, rule.NetworkInterface)
 		}
 	}
 
