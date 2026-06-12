@@ -251,14 +251,30 @@ build() {
     fi
 }
 
+prepare_install_artifacts() {
+    if [ -f "bin/monitor" ]; then
+        print_info "检测到预构建后端: bin/monitor，跳过后端编译"
+        chmod +x bin/monitor || true
+
+        if [ -d "web/dist" ]; then
+            print_info "检测到预构建前端: web/dist，跳过前端构建"
+        else
+            print_warning "未检测到 web/dist，将只安装内置简化 Web 页面"
+        fi
+        return 0
+    fi
+
+    build
+}
+
 # 安装服务
 install_service() {
     check_root
     
     print_info "开始安装 ${APP_NAME}..."
     
-    # 编译程序
-    build
+    # 准备安装产物（源码安装时编译，预构建包安装时直接使用）
+    prepare_install_artifacts
     
     # 创建安装目录
     print_info "创建安装目录..."
