@@ -8,6 +8,7 @@
 - 🔍 **自动发现虚拟机**: 通过 PVE API 自动获取节点上的所有虚拟机
 - 📊 **实时流量监控**: 持续监控虚拟机网络流量（上传/下载）
 - ⏰ **多周期限制**: 支持按小时/天/月设置流量限制
+- 🎯 **流量方向控制**: 支持分别限制上传、下载或双向流量
 - 🚫 **自动操作**: 超出流量限制后自动关机或限速
 - 🌐 **可选 Web 界面**: Vue 3 + Element Plus，支持明暗主题和中英文切换（可禁用）
 - 🔐 **API Token 认证**: 可选的 Web API 访问令牌保护，防止未授权访问
@@ -246,6 +247,7 @@ npm run build    # 构建生产版本
       "name": "monthly_limit",          // 规则名称
       "enabled": true,                  // 是否启用
       "period": "month",                // 周期: hour/day/month
+      "traffic_direction": "both",      // 流量方向: both/upload/download (默认 both)
       "limit_gb": 1000,                 // 流量限制（GB）
       "action": "shutdown",             // 操作: shutdown/rate_limit
       "rate_limit_mb": 10,              // 限速值 MB/s（仅 rate_limit 操作）
@@ -254,6 +256,23 @@ npm run build    # 构建生产版本
       "exclude_vm_ids": [999]           // 排除的虚拟机
     }
   ]
+}
+```
+
+**流量方向说明**:
+- `both` - 双向流量（上传+下载，默认）
+- `upload` / `tx` - 仅上传流量
+- `download` / `rx` - 仅下载流量
+
+**示例场景**:
+```json
+{
+  "name": "upload_limit",
+  "period": "month",
+  "traffic_direction": "upload",    // 仅限制上传流量
+  "limit_gb": 500,
+  "action": "rate_limit",
+  "rate_limit_mb": 10
 }
 ```
 
